@@ -7,7 +7,7 @@ import (
 
 // Backend abstracts a single-file texture compressor. Two implementations exist
 // today — texconv (all platforms, GPU-accelerated on Windows for BC7) and
-// compressonator-bc7e (Linux/Windows, CPU-only, all five BC formats). The
+// compressonator-bc7e (all platforms, CPU-only, all five BC formats). The
 // interface exists so worker.go can select once per run and route every job
 // through the same code path, and so the compressonator→texconv fallbacks in
 // dispatch() can swap backends per-file without leaking backend specifics into

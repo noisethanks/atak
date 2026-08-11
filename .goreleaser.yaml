@@ -34,6 +34,19 @@ builds:
       - -s -w -X main.version={{.Version}}
     binary: atak-macos
 
+  # Apple Silicon gets its own artifact rather than a universal binary.
+  # A universal atak would carry two full copies of the embedded tools,
+  # ~45MB against the 25MB target, because the tools are embedded per GOOS
+  # and each already holds both slices.
+  - id: macos-arm64
+    goos: [darwin]
+    goarch: [arm64]
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    binary: atak-macos
+
 archives:
   - id: linux
     builds: [linux]
@@ -62,6 +75,15 @@ archives:
       - SPEC.md
       - THIRD_PARTY_LICENSES.txt
 
+  - id: macos-arm64
+    builds: [macos-arm64]
+    format: tar.gz
+    name_template: "atak-{{.Version}}-macos-arm64"
+    files:
+      - README.md
+      - SPEC.md
+      - THIRD_PARTY_LICENSES.txt
+
 checksum:
   name_template: "checksums.txt"
 
@@ -81,6 +103,7 @@ release:
     - **Linux:** `atak-{{.Version}}-linux-x64.tar.gz`
     - **Windows:** `atak-{{.Version}}-windows-x64.zip`
     - **macOS (Intel):** `atak-{{.Version}}-macos-x64.tar.gz`
+    - **macOS (Apple Silicon):** `atak-{{.Version}}-macos-arm64.tar.gz`
 
     ### Installation
     **Linux / macOS:**

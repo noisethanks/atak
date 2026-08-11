@@ -43,10 +43,8 @@ type Config struct {
 	WorkerCount    int      `json:"workerCount"`
 	BackupLevel    int      `json:"backupLevel,omitempty"`
 	// CompressionBackend selects which embedded compressor runs. Valid values:
-	// "texconv" (default, all platforms) and "compressonator-bc7e"
-	// (Linux/Windows only). On darwin the field is coerced back to "texconv"
-	// on load, so a config synced over from another OS can't select an
-	// unavailable backend.
+	// "texconv" and "compressonator-bc7e", both available on every supported
+	// platform. An unrecognized value is coerced back to "texconv" on load.
 	CompressionBackend string `json:"compressionBackend,omitempty"`
 	// ScanExclusions are directory globs pruned during the scan. A plain name matches a
 	// directory (or mod) anywhere; a path pattern like */textures/ui/SquareDOV matches a
@@ -107,13 +105,10 @@ func Load() (*Config, error) {
 }
 
 // normalizeBackend validates a persisted backend selection and coerces unknown
-// or platform-unavailable values back to the default. Called on every Load so
-// a config.json copied from another OS (e.g. Windows → macOS) never selects a
-// backend that isn't built for the current platform.
+// values back to the default. Called on every Load so a hand-edited or
+// future-dated config.json can never name a backend this build has no
+// implementation for.
 func normalizeBackend(v string) string {
-	if runtime.GOOS == "darwin" {
-		return BackendTexconv
-	}
 	switch v {
 	case BackendTexconv, BackendCompressonatorBc7e:
 		return v

@@ -20,7 +20,7 @@ const (
 	fieldWorkers
 	fieldBackupLevel
 	fieldStripMips          // bool toggle — no text input
-	fieldCompressionBackend // two-way selector, hidden on darwin (no compressonator build)
+	fieldCompressionBackend // two-way selector
 	fieldModOutputMode      // bool toggle — no text input
 	fieldModOutputName      // text input, shown only when ModOutputMode is on
 	fieldModlistPath        // text input, shown only when ModOutputMode is on
@@ -59,8 +59,7 @@ type SettingsModel struct {
 	// stripMips mirrors cfg.StripMipsWhenDisabled while the toggle is being edited.
 	stripMips bool
 	// compressionBackend mirrors cfg.CompressionBackend while the selector is
-	// being edited. On darwin this stays "texconv" — the row is hidden and
-	// there's no way to change it.
+	// being edited.
 	compressionBackend string
 }
 
@@ -188,9 +187,6 @@ func (m SettingsModel) isVisible(f settingsField) bool {
 	if f == fieldModOutputName || f == fieldModlistPath {
 		return m.modOutputMode
 	}
-	if f == fieldCompressionBackend {
-		return runtime.GOOS != "darwin"
-	}
 	return true
 }
 
@@ -216,11 +212,7 @@ func (m SettingsModel) save() (SettingsModel, tea.Cmd) {
 	updated.ModOutputName = modOutputName
 	updated.ModlistPath = strings.TrimSpace(m.inputs[5].Value())
 	updated.StripMipsWhenDisabled = m.stripMips
-	if runtime.GOOS == "darwin" {
-		updated.CompressionBackend = config.BackendTexconv
-	} else {
-		updated.CompressionBackend = m.compressionBackend
-	}
+	updated.CompressionBackend = m.compressionBackend
 	return m, func() tea.Msg {
 		return NavigateMsg{To: NavSaveConfig, Data: &updated}
 	}
@@ -273,9 +265,8 @@ func (m SettingsModel) View() string {
 		b.WriteString(style.StyleMuted.Render("When on, profiles with generateMips=false skip mips entirely, dropping any chain the\n  source shipped. When off (default), a mipped source keeps its chain (flares, reticles).") + "\n\n")
 	}
 
-	// Compression backend selector — hidden on macOS since compressonator-bc7e
-	// isn't built for darwin.
-	if runtime.GOOS != "darwin" {
+	// Compression backend selector.
+	{
 		label := "Compression Backend"
 		var value string
 		if m.compressionBackend == config.BackendCompressonatorBc7e {

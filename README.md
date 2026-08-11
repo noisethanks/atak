@@ -269,7 +269,7 @@ for S.T.A.L.K.E.R. Anomaly maintained by Grok. Join the community on
 - [Bubbles](https://github.com/charmbracelet/bubbles) — MIT — Charmbracelet
 - [Lip Gloss](https://github.com/charmbracelet/lipgloss) — MIT — Charmbracelet
 
-The optional compressonator-bc7e compression backend (Windows/Linux) additionally
+The optional compressonator-bc7e compression backend additionally
 incorporates:
 
 - [AMD Compressonator](https://github.com/GPUOpen-Tools/compressonator) — MIT — © 2024 Advanced Micro Devices, Inc.; © 2004-2006 ATI Technologies Inc.

@@ -21,13 +21,8 @@ func TestE2ERealFileFallbackAttribution(t *testing.T) {
 	if _, err := os.Stat(src); err != nil {
 		t.Skipf("real modfile absent: %v", err)
 	}
-	compressBin := "/home/abhi/stalker-tex/internal/tools/bin/compressonator-bc7e-linux"
-	texconvBin := "/home/abhi/stalker-tex/internal/tools/bin/texconv-linux"
-	for _, p := range []string{compressBin, texconvBin} {
-		if _, err := os.Stat(p); err != nil {
-			t.Skipf("binary missing: %v", err)
-		}
-	}
+	compressBin := repoToolPath(t, "compressonator-bc7e")
+	texconvBin := repoToolPath(t, "texconv")
 
 	primary := NewCompressonatorBackend(compressBin)
 	fallback := NewTexconvBackend(texconvBin)

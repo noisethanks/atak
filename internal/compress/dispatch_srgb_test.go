@@ -6,11 +6,41 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/noisethanks/atak/internal/scan"
 )
+
+// repoToolPath resolves one of the embedded tool binaries straight from
+// internal/tools/bin for the platform running the test. These tests shell out
+// to a real binary, and the embedded copy only becomes a file at runtime via
+// tools.Extract, so the source tree is the one location that always has it —
+// and it keeps the test running on every platform that ships the tool instead
+// of only on the machine that wrote the path.
+func repoToolPath(t *testing.T, stem string) string {
+	t.Helper()
+	var suffix string
+	switch runtime.GOOS {
+	case "darwin":
+		suffix = "-macos"
+	case "linux":
+		suffix = "-linux"
+	case "windows":
+		suffix = "-windows.exe"
+	default:
+		t.Skipf("no %s build for %s", stem, runtime.GOOS)
+	}
+	path, err := filepath.Abs(filepath.Join("..", "tools", "bin", stem+suffix))
+	if err != nil {
+		t.Skipf("resolve %s: %v", stem, err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("binary missing: %v", err)
+	}
+	return path
+}
 
 // synthSrgbDX10DDS builds a minimal, self-contained DDS with a DX10 extended
 // header advertising dxgiFormat = 91 (DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) — the
@@ -98,13 +128,8 @@ func writeFixture(t *testing.T, name string, data []byte) string {
 // source file"; dispatch retries via texconv, which accepts it. The
 // synthesized fixture stays in-tree so this regression can't recur silently.
 func TestDispatchCompressonatorSrgbFallback(t *testing.T) {
-	compressBin := "/home/abhi/stalker-tex/internal/tools/bin/compressonator-bc7e-linux"
-	texconvBin := "/home/abhi/stalker-tex/internal/tools/bin/texconv-linux"
-	for _, p := range []string{compressBin, texconvBin} {
-		if _, err := os.Stat(p); err != nil {
-			t.Skipf("binary missing: %v", err)
-		}
-	}
+	compressBin := repoToolPath(t, "compressonator-bc7e")
+	texconvBin := repoToolPath(t, "texconv")
 
 	src := writeFixture(t, "srgb_dx10.dds", synthSrgbDX10DDS(true))
 	outDir := t.TempDir()

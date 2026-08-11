@@ -106,9 +106,9 @@ func (m CompressModel) startCompression() tea.Cmd {
 // selectBackends picks the primary backend from cfg and, when primary is
 // compressonator, also supplies a texconv fallback for the maxTextureSize
 // resize case (compressonator has no exact-size resize flag). When
-// compressonator was selected but its binary isn't extracted (e.g. the config
-// was hand-edited on darwin), fall back cleanly to texconv rather than
-// erroring — the fallback path is already the safe choice.
+// compressonator was selected but its binary isn't extracted, fall back
+// cleanly to texconv rather than erroring — the fallback path is already the
+// safe choice.
 func selectBackends(cfg *config.Config, t *tools.EmbeddedTools) (primary, fallback compress.Backend) {
 	tex := compress.NewTexconvBackend(t.TexconvPath)
 	if cfg.CompressionBackend == config.BackendCompressonatorBc7e && t.CompressonatorPath != "" {

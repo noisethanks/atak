@@ -369,7 +369,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-compressonator-bc7e (optional compression backend, Windows/Linux only)
+compressonator-bc7e (optional compression backend)
 ------------------------------------------------------------------------
 This backend is a fork of AMD Compressonator with the CPU-side BC7 codec
 replaced by bc7e.ispc from richgel999/bc7enc_rdo. Two licenses apply.

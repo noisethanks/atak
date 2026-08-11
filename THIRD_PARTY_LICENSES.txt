@@ -228,7 +228,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 ==============================================================
-Compression backend compressonator-bc7e (optional, Windows/Linux)
+Compression backend compressonator-bc7e (optional)
 ==============================================================
 
 See licenses/compressonator-bc7e/ for full text of the two licenses
