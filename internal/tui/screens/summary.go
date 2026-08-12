@@ -102,7 +102,11 @@ func (m SummaryModel) View() string {
 
 	if d.OutputSkipped > 0 && d.Succeeded == 0 {
 		b.WriteString(style.StyleWarning.Render("Nothing to compress — all files already exist in output folder.") + "\n")
-		b.WriteString(style.StyleWarning.Render(fmt.Sprintf("Delete %s to force recompression.", d.OutputDir)) + "\n\n")
+		if d.OutputIsPattern {
+			b.WriteString(style.StyleWarning.Render(fmt.Sprintf("Delete the existing output folders matching %s to force recompression.", d.OutputDir)) + "\n\n")
+		} else {
+			b.WriteString(style.StyleWarning.Render(fmt.Sprintf("Delete %s to force recompression.", d.OutputDir)) + "\n\n")
+		}
 	}
 
 	b.WriteString(style.StyleSuccess.Render(fmt.Sprintf("✓  %d succeeded", d.Succeeded)) + "\n")

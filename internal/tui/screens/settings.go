@@ -23,6 +23,8 @@ const (
 	fieldCompressionBackend // two-way selector, hidden on darwin (no compressonator build)
 	fieldModOutputMode      // bool toggle — no text input
 	fieldModOutputName      // text input, shown only when ModOutputMode is on
+	fieldPerCategoryModOutput // bool toggle
+	fieldPerModModOutput    // bool toggle
 	fieldModlistPath        // text input, shown only when ModOutputMode is on
 	fieldCount
 )
@@ -52,6 +54,8 @@ type SettingsModel struct {
 	cfg           *config.Config
 	inputs        [6]textinput.Model // modsDir, backupDir, workers, backupLevel, modOutputName, modlistPath
 	modOutputMode bool
+	perCategoryModOutput bool
+	perModModOutput bool
 	focused       settingsField
 	errMsg        string
 	width         int
@@ -99,6 +103,8 @@ func NewSettings(cfg *config.Config) SettingsModel {
 		cfg:                cfg,
 		inputs:             [6]textinput.Model{mods, backup, workers, backupLvl, modOutputName, modlistPath},
 		modOutputMode:      cfg.ModOutputMode,
+		perCategoryModOutput: cfg.PerCategoryModOutput,
+		perModModOutput:    cfg.PerModModOutput,
 		stripMips:          cfg.StripMipsWhenDisabled,
 		compressionBackend: backend,
 		focused:            fieldModsDir,
@@ -124,6 +130,14 @@ func (m SettingsModel) Update(msg tea.Msg) (SettingsModel, tea.Cmd) {
 		case " ", "left", "right":
 			if m.focused == fieldModOutputMode {
 				m.modOutputMode = !m.modOutputMode
+				return m, nil
+			}
+			if m.focused == fieldPerCategoryModOutput {
+				m.perCategoryModOutput = !m.perCategoryModOutput
+				return m, nil
+			}
+			if m.focused == fieldPerModModOutput {
+				m.perModModOutput = !m.perModModOutput
 				return m, nil
 			}
 			if m.focused == fieldStripMips {
@@ -185,7 +199,7 @@ func (m SettingsModel) prevField() settingsField {
 }
 
 func (m SettingsModel) isVisible(f settingsField) bool {
-	if f == fieldModOutputName || f == fieldModlistPath {
+	if f == fieldModOutputName || f == fieldModlistPath || f == fieldPerCategoryModOutput || f == fieldPerModModOutput {
 		return m.modOutputMode
 	}
 	if f == fieldCompressionBackend {
@@ -213,6 +227,8 @@ func (m SettingsModel) save() (SettingsModel, tea.Cmd) {
 	updated.WorkerCount = workers
 	updated.BackupLevel = backupLevel
 	updated.ModOutputMode = m.modOutputMode
+	updated.PerCategoryModOutput = m.perCategoryModOutput
+	updated.PerModModOutput = m.perModModOutput
 	updated.ModOutputName = modOutputName
 	updated.ModlistPath = strings.TrimSpace(m.inputs[5].Value())
 	updated.StripMipsWhenDisabled = m.stripMips
@@ -319,6 +335,50 @@ func (m SettingsModel) View() string {
 		outputFolder := filepath.Join(m.cfg.ModsDir, m.inputs[4].Value())
 		b.WriteString(style.StyleMuted.Render("Output folder: "+outputFolder) + "\n")
 		b.WriteString(style.StyleMuted.Render("Delete this folder to force recompression on next run.") + "\n\n")
+
+		// Per-Category Output toggle.
+		{
+			toggleLabel := "Per-Category Output Directories"
+			toggleValue := "[ off ]"
+			if m.perCategoryModOutput {
+				toggleValue = style.StyleSuccess.Render("[ on  ]")
+			}
+			if m.focused == fieldPerCategoryModOutput {
+				b.WriteString(style.StyleSelected.Render(toggleLabel) + "\n")
+			} else {
+				b.WriteString(style.StyleBody.Render(toggleLabel) + "\n")
+			}
+			b.WriteString(toggleValue + "\n")
+			currentName := strings.TrimSpace(m.inputs[4].Value())
+			if currentName == "" {
+				currentName = "ATAK"
+			}
+			b.WriteString(style.StyleMuted.Render("Output each texture profile to a separate mod folder (e.g., "+currentName+" - Normal Maps).") + "\n\n")
+		}
+
+		// Per-Mod Output toggle.
+		{
+			toggleLabel := "Per-Mod Output Directories"
+			toggleValue := "[ off ]"
+			if m.perModModOutput {
+				toggleValue = style.StyleSuccess.Render("[ on  ]")
+			}
+			if m.focused == fieldPerModModOutput {
+				b.WriteString(style.StyleSelected.Render(toggleLabel) + "\n")
+			} else {
+				b.WriteString(style.StyleBody.Render(toggleLabel) + "\n")
+			}
+			b.WriteString(toggleValue + "\n")
+			currentName := strings.TrimSpace(m.inputs[4].Value())
+			if currentName == "" {
+				currentName = "ATAK"
+			}
+			example := currentName + " - SomeModName"
+			if m.perCategoryModOutput {
+				example += " - Normal Maps"
+			}
+			b.WriteString(style.StyleMuted.Render("Output each source mod to a separate mod folder (e.g., "+example+").") + "\n\n")
+		}
 
 		modlistLabel := style.StyleBody.Render("MO2 modlist.txt Path")
 		if m.focused == fieldModlistPath {

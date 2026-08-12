@@ -83,6 +83,9 @@ func (m ScanModel) startScan() tea.Cmd {
 			}
 			// Auto-exclude the output folder so it's never scanned.
 			exclusions := append(cfg.ScanExclusions, cfg.ModOutputName)
+			if cfg.PerCategoryModOutput || cfg.PerModModOutput {
+				exclusions = append(exclusions, cfg.ModOutputName+" - *")
+			}
 			// Filter excluded mods before building the virtual FS so they never
 			// win conflicts — analogous to Walk's filepath.SkipDir on directories.
 			// Only whole-mod (name) exclusions apply here; path patterns target

@@ -98,7 +98,7 @@ func (m CompressModel) startCompression() tea.Cmd {
 		jobs := buildJobs(data)
 		primary, fallback := selectBackends(cfg, t)
 		resultCh := compress.RunPool(ctx, primary, fallback, jobs, data.WorkerCount)
-		opCh, sumCh := compressToOpCh(resultCh, total, data.ModOutputDir)
+		opCh, sumCh := compressToOpCh(resultCh, total, data.ModOutputDir, data.ModOutputIsPattern)
 		return compressReadyMsg{opCh: opCh, sumCh: sumCh}
 	}
 }
@@ -163,6 +163,7 @@ func compressToOpCh(
 	resultCh <-chan compress.CompressionResult,
 	total int,
 	modOutputDir string,
+	modOutputIsPattern bool,
 ) (<-chan components.OperationProgressMsg, <-chan SummaryData) {
 	opCh := make(chan components.OperationProgressMsg, 32)
 	sumCh := make(chan SummaryData, 1)
@@ -208,15 +209,16 @@ func compressToOpCh(
 			}
 		}
 		sumCh <- SummaryData{
-			Succeeded:      succeeded,
-			Failed:         failed,
-			OutputSkipped:  outputSkipped,
-			OutputDir:      modOutputDir,
-			TotalBefore:    totalBefore,
-			TotalAfter:     totalAfter,
-			Errors:         errors,
-			FallbackCounts: fallbackCounts,
-			Fallbacks:      fallbacks,
+			Succeeded:       succeeded,
+			Failed:          failed,
+			OutputSkipped:   outputSkipped,
+			OutputDir:       modOutputDir,
+			OutputIsPattern: modOutputIsPattern,
+			TotalBefore:     totalBefore,
+			TotalAfter:      totalAfter,
+			Errors:          errors,
+			FallbackCounts:  fallbackCounts,
+			Fallbacks:       fallbacks,
 		}
 		close(opCh)
 	}()
@@ -248,9 +250,18 @@ func buildJobs(data CompressJobData) []compress.Job {
 				MaxTextureSize: g.MaxTextureSize,
 				OutputDir:      filepath.Dir(path),
 			}
-			if data.ModOutputDir != "" && i < len(g.RelPaths) && g.RelPaths[i] != "" {
-				job.RelPath = g.RelPaths[i]
-				job.ModOutputDir = data.ModOutputDir
+			if i < len(g.RelPaths) && g.RelPaths[i] != "" {
+				switch {
+				case i < len(g.ModOutputDirs) && g.ModOutputDirs[i] != "":
+					job.RelPath = g.RelPaths[i]
+					job.ModOutputDir = g.ModOutputDirs[i]
+				case g.ModOutputDir != "":
+					job.RelPath = g.RelPaths[i]
+					job.ModOutputDir = g.ModOutputDir
+				case data.ModOutputDir != "":
+					job.RelPath = g.RelPaths[i]
+					job.ModOutputDir = data.ModOutputDir
+				}
 			}
 			jobs = append(jobs, job)
 		}

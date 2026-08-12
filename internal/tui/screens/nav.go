@@ -52,10 +52,11 @@ type assetRef struct {
 
 // CompressJobData is passed from CompressConfig → Compress.
 type CompressJobData struct {
-	Groups       []ConfiguredGroup
-	WorkerCount  int
-	ModsDir      string // needed to compute RelPath in mod output mode
-	ModOutputDir string // non-empty enables mod output mode (e.g. /mods/ATAK)
+	Groups             []ConfiguredGroup
+	WorkerCount        int
+	ModsDir            string // needed to compute RelPath in mod output mode
+	ModOutputDir       string // non-empty enables mod output mode (e.g. /mods/ATAK)
+	ModOutputIsPattern bool   // true when ModOutputDir is a display pattern (e.g. "ATAK - *"), not a real single folder
 }
 
 // ConfiguredGroup is a profile group with user-confirmed settings.
@@ -69,17 +70,20 @@ type ConfiguredGroup struct {
 	Widths         []int    // parallel to Paths; source texture width in pixels
 	Heights        []int    // parallel to Paths; source texture height in pixels
 	OutputDir      string   // empty means in-place (filepath.Dir of each asset)
+	ModOutputDir   string   // overrides data.ModOutputDir per-group when non-empty
+	ModOutputDirs  []string // parallel to Paths; per-asset override when non-empty (per-mod output), takes priority over ModOutputDir
 }
 
 // SummaryData is passed from Compress → Summary.
 type SummaryData struct {
-	Succeeded     int
-	Failed        int
-	OutputSkipped int    // files skipped because they already exist in mod output dir
-	OutputDir     string // mod output dir path; non-empty when mod output mode was active
-	TotalBefore   int64
-	TotalAfter    int64
-	Errors        []string
+	Succeeded       int
+	Failed          int
+	OutputSkipped   int    // files skipped because they already exist in mod output dir
+	OutputDir       string // mod output dir path; non-empty when mod output mode was active
+	OutputIsPattern bool   // true when OutputDir is a display pattern (e.g. "ATAK - *"), not a literal deletable folder
+	TotalBefore     int64
+	TotalAfter      int64
+	Errors          []string
 	// FallbackCounts is reason (compress.Fallback* const) → count. Only nonzero
 	// keys are populated. Empty map = clean run, no fallbacks fired.
 	FallbackCounts map[string]int

@@ -54,6 +54,8 @@ type Config struct {
 	// its whole subtree are skipped.
 	ScanExclusions []string `json:"scanExclusions,omitempty"`
 	ModOutputMode  bool     `json:"modOutputMode"`
+	PerCategoryModOutput bool `json:"perCategoryModOutput"`
+	PerModModOutput bool `json:"perModModOutput"`
 	ModOutputName  string   `json:"modOutputName"`
 	ModlistPath    string   `json:"modlistPath"`
 	// StripMipsWhenDisabled makes a profile's generateMips:false authoritative: source mip
@@ -186,6 +188,7 @@ func defaultConfig() *Config {
 		BackupLevel:        6,
 		ScanExclusions:     []string{".*", "downloads", "Downloads", "G.A.M.M.A. UI"},
 		ModOutputMode:      true,
+		PerCategoryModOutput: true,
 		ModOutputName:      "ATAK",
 		ModlistPath:        "",
 		CompressionBackend: BackendTexconv,
