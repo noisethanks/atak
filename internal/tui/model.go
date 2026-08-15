@@ -267,6 +267,12 @@ func (m AppModel) handleNavigate(msg screens.NavigateMsg) (tea.Model, tea.Cmd) {
 		m.menu = screens.NewMenu()
 		return m, m.menu.Init()
 
+	case screens.NavWelcome:
+		m.screen = ScreenWelcome
+		notice, _ := msg.Data.(string)
+		m.welcome = screens.NewWelcomeWithNotice(m.cfg, notice)
+		return m, m.welcome.Init()
+
 	case screens.NavQuit:
 		return m, tea.Quit
 	}

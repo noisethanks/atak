@@ -62,6 +62,14 @@ func (m ScanModel) startScan() tea.Cmd {
 	cfg := m.cfg
 	ctx := m.ctx
 	return func() tea.Msg {
+		if !dirExists(cfg.ModsDir) {
+			notice := ""
+			if cfg.ModsDir != "" {
+				notice = "Mods directory not found: " + cfg.ModsDir
+			}
+			return NavigateMsg{To: NavWelcome, Data: notice}
+		}
+
 		profiles, excludePatterns, minFileSize, _, err := config.LoadProfiles()
 		if err != nil || len(profiles) == 0 {
 			return scanCompleteMsg{total: 0}

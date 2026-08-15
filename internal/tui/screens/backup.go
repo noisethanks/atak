@@ -93,6 +93,20 @@ func NewBackup(cfg *config.Config, t *tools.EmbeddedTools) BackupModel {
 }
 
 func (m BackupModel) Init() tea.Cmd {
+	if !dirExists(m.cfg.BackupDir) {
+		notice := ""
+		if m.cfg.BackupDir != "" {
+			notice = "Backup directory not found: " + m.cfg.BackupDir
+		}
+		return func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
+	}
+	if !dirExists(m.cfg.ModsDir) {
+		notice := ""
+		if m.cfg.ModsDir != "" {
+			notice = "Mods directory not found: " + m.cfg.ModsDir
+		}
+		return func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
+	}
 	return m.loadBackups()
 }
 
@@ -291,6 +305,16 @@ func (m BackupModel) handleOperationDone() (BackupModel, tea.Cmd) {
 }
 
 func (m BackupModel) selectArchiveOrPick(action backupPendingAction) (BackupModel, tea.Cmd) {
+	// Restore actions extract into ModsDir; block before archive picker is shown.
+	if action == pendingRestoreSingle || action == pendingRestoreAll {
+		if !dirExists(m.cfg.ModsDir) {
+			notice := ""
+			if m.cfg.ModsDir != "" {
+				notice = "Mods directory not found: " + m.cfg.ModsDir
+			}
+			return m, func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
+		}
+	}
 	m.pendingAction = action
 	if len(m.backups) == 0 {
 		return m, nil
@@ -328,6 +352,13 @@ func (m BackupModel) handleSelectedArchive(bk archive.BackupInfo) (BackupModel, 
 }
 
 func (m BackupModel) startBackup() (BackupModel, tea.Cmd) {
+	if !dirExists(m.cfg.ModsDir) {
+		notice := ""
+		if m.cfg.ModsDir != "" {
+			notice = "Mods directory not found: " + m.cfg.ModsDir
+		}
+		return m, func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	outPath := filepath.Join(m.cfg.BackupDir, fmt.Sprintf(
 		"gamma-backup-%s.7z", time.Now().Format("2006-01-02-150405")))
@@ -351,6 +382,13 @@ func (m BackupModel) startBackup() (BackupModel, tea.Cmd) {
 }
 
 func (m BackupModel) startRestore() (BackupModel, tea.Cmd) {
+	if !dirExists(m.cfg.ModsDir) {
+		notice := ""
+		if m.cfg.ModsDir != "" {
+			notice = "Mods directory not found: " + m.cfg.ModsDir
+		}
+		return m, func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	modName := m.selectedMod
 	modDir := m.cfg.ModsDir
@@ -379,6 +417,13 @@ func (m BackupModel) startRestore() (BackupModel, tea.Cmd) {
 }
 
 func (m BackupModel) startRestoreAll() (BackupModel, tea.Cmd) {
+	if !dirExists(m.cfg.ModsDir) {
+		notice := ""
+		if m.cfg.ModsDir != "" {
+			notice = "Mods directory not found: " + m.cfg.ModsDir
+		}
+		return m, func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	modsDir := m.cfg.ModsDir
 	sizeFunc := func() int64 {

@@ -509,6 +509,28 @@ All archive operations live in one screen (`backup.go`). No separate Restore scr
   - If only one archive exists — auto-select it, proceed directly
   - If multiple archives exist — show a picker to select which to operate on
 
+**Path guards — both `modsDir` and `backupDir` are checked at screen entry
+(`Init`) via filesystem existence check (`dirExists`). If either is absent or
+no longer a valid directory, the screen immediately routes to the path-config
+screen (Welcome) with a message naming the bad path, before the backup list is
+even loaded. This is a hard gate: the backup menu is never shown with an invalid
+path.**
+
+Per-action guards (defense-in-depth, covers paths that become invalid after screen
+entry):
+
+| Action | ModsDir dep | BackupDir dep | Guard |
+|---|---|---|---|
+| Create New Backup | YES (backup source) | YES (output dir) | `startBackup` checks ModsDir; BackupDir guarded by Init |
+| Restore Single Mod | YES (`-o<parent_of_modsDir>`) | NO | `selectArchiveOrPick` + `startRestore` both check ModsDir |
+| Restore All | YES (`-o<parent_of_modsDir>`) | NO | `selectArchiveOrPick` + `startRestoreAll` both check ModsDir |
+| Verify Archive | NO (`7zz t <archive>` only) | NO | No guard needed |
+| Delete Backup | NO (`os.Remove` on archive path) | NO | No guard needed |
+
+For Restore Single Mod and Restore All, the ModsDir check fires in
+`selectArchiveOrPick` — **before** the archive picker, before `ModPicker`, before
+any confirmation dialog. A bad path never reaches a subprocess invocation.
+
 **Actions:**
 - **Create New Backup** — runs compression via shared `OperationScreen`, no
   archive selection needed
@@ -564,6 +586,9 @@ Two restore modes accessible from the Backup Manager:
 Both modes:
 - Stream progress back to UI via shared OperationScreen component
 - Support Ctrl+C cancellation — kills 7zz subprocess, returns to main menu
+- Require a valid `modsDir` (checked before archive picker is shown); empty or
+  nonexistent path routes to path-config screen with a descriptive message — no
+  silent extraction to current working directory
 
 ### 3. Scan
 
@@ -943,13 +968,47 @@ All platforms expose the same interface: `SetProcAttr(cmd)`, `KillProcess(cmd)`,
   "Strip Mips When Disabled". Resolved in `compress.ShouldGenerateMips`.
 - **Compression backend** (`compressionBackend`) — string enum, valid values
   `"texconv"` (default, all platforms) and `"compressonator-bc7e"` (Linux/Windows
-  only, CPU-only, deterministic across platforms). Unknown or empty values are
-  coerced to `"texconv"` on load. **On darwin, always coerced to `"texconv"` on
-  load** regardless of what's stored, so a config synced over from another OS
-  can't select a backend that isn't built for this platform. The Settings row
-  is hidden entirely on darwin rather than shown disabled. Toggle in Settings
-  with `space` / `←` / `→` — two-way selector, not free text.
+  only, CPU-only, deterministic across platforms). Any other string, empty string,
+  or wrong type causes Load to return an error and the app will not start.
+  **On darwin, the resolved value is always coerced to `"texconv"` after validation**,
+  so a config synced from another OS can't select an unavailable backend. This
+  darwin coercion is expected to be removed once macOS gains compressonator-bc7e
+  support; the validation logic (`validateConfig`) needs no changes at that point.
+  The Settings row is hidden entirely on darwin rather than shown disabled. Toggle
+  in Settings with `space` / `←` / `→` — two-way selector, not free text.
 - Persist to `os.UserConfigDir()/atak/config.json`
+
+### config.json field groups
+
+config.json fields fall into two groups with different validation semantics:
+
+**Path fields** (`modsDir`, `backupDir`, `modlistPath`): never block startup.
+Validated live at point of use via filesystem existence check (`os.Stat`), not
+merely string presence. An empty string, a path that no longer exists, or a path
+that is not a directory all route the user to the path-config screen (Welcome)
+rather than preventing launch or surfacing a raw subprocess error. When the path
+is set but invalid (non-empty string that fails the existence check), Welcome
+displays the specific bad path so the user understands something changed since
+last run. `modlistPath` is an exception — its existing fallback-to-raw-walk
+behavior on invalid paths is intentional; it does not route to Welcome.
+
+**Required fields** (all other top-level fields): must be explicitly present in the
+JSON with the correct type. A missing key, wrong type, or (for `compressionBackend`)
+invalid enum value causes `Load` to return a descriptive error and the app will not
+start. Errors always name the offending field and the problem; raw stdlib JSON error
+text is never surfaced. Specific rules:
+
+- `scanExclusions`: must be present as a JSON array of strings. An empty array (`[]`)
+  is valid — absence of the key is not. A non-array value or an array containing
+  non-string elements is rejected.
+- `compressionBackend`: must be present as a JSON string with value exactly `"texconv"`
+  or `"compressonator-bc7e"`. Any other string, empty string, or wrong type is rejected
+  with an error naming the invalid value and the two valid options. This check applies
+  uniformly on all platforms, including darwin — the post-validation platform coercion
+  is a separate step.
+
+First run (no config.json on disk): `IsFirstRun()` returns true, `Load()` returns
+defaults, validation is not reached.
 
 Full config.json schema (see `internal/config/config.go` for canonical struct):
 ```json

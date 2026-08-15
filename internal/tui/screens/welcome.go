@@ -9,18 +9,27 @@ import (
 	"github.com/noisethanks/atak/internal/tui/style"
 )
 
-// WelcomeModel handles first-run path configuration.
+// WelcomeModel handles first-run path configuration and re-configuration when a
+// previously set path is no longer valid.
 type WelcomeModel struct {
 	cfg       *config.Config
 	modsInput textinput.Model
 	bkupInput textinput.Model
 	focused   int // 0 = mods, 1 = backup
+	notice    string
 	width     int
 	height    int
 	err       string
 }
 
 func NewWelcome(cfg *config.Config) WelcomeModel {
+	return NewWelcomeWithNotice(cfg, "")
+}
+
+// NewWelcomeWithNotice creates the welcome screen with an optional notice shown
+// above the path inputs. Used when routing here because a configured path is no
+// longer valid; pass an empty string for the normal first-run case.
+func NewWelcomeWithNotice(cfg *config.Config, notice string) WelcomeModel {
 	mods := textinput.New()
 	mods.Placeholder = "/home/user/Games/Anomaly/mods"
 	mods.SetValue(cfg.ModsDir)
@@ -36,6 +45,7 @@ func NewWelcome(cfg *config.Config) WelcomeModel {
 		cfg:       cfg,
 		modsInput: mods,
 		bkupInput: bkup,
+		notice:    notice,
 	}
 }
 
@@ -105,7 +115,11 @@ func (m WelcomeModel) View() string {
 	var b strings.Builder
 	b.WriteString(style.StyleTitle.Render("atak") + "\n")
 	b.WriteString(style.StyleSubtitle.Render("S.T.A.L.K.E.R. Anomaly texture compressor & backup tool") + "\n\n")
-	b.WriteString(style.StyleBody.Render("Welcome! Let's set up your paths before we begin.") + "\n\n")
+	if m.notice != "" {
+		b.WriteString(style.StyleWarning.Render(m.notice) + "\n\n")
+	} else {
+		b.WriteString(style.StyleBody.Render("Welcome! Let's set up your paths before we begin.") + "\n\n")
+	}
 
 	b.WriteString(style.StyleSelected.Render("Anomaly Mods Directory") + "\n")
 	b.WriteString(m.modsInput.View() + "\n\n")

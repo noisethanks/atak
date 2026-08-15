@@ -23,6 +23,7 @@ const (
 	NavAbout
 	NavSaveConfig
 	NavQuit
+	NavWelcome
 )
 
 // NavigateMsg is sent by any sub-screen to request a screen transition.
