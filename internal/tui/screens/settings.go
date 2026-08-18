@@ -226,9 +226,63 @@ func (m SettingsModel) save() (SettingsModel, tea.Cmd) {
 	}
 }
 
+// settingsFieldLabel maps a field to the exact label text its View() block
+// writes, so scrollToFocused can locate the focused field's line without
+// duplicating the render logic. Kept in sync with the labels below by hand —
+// there's no field this doesn't cover, since every visible field has one.
+var settingsFieldLabel = map[settingsField]string{
+	fieldModsDir:            "Anomaly Mods Directory",
+	fieldBackupDir:          "Backup Directory",
+	fieldWorkers:            "Worker Threads",
+	fieldBackupLevel:        "Backup Compression Level",
+	fieldStripMips:          "Strip Mips When Disabled",
+	fieldCompressionBackend: "Compression Backend",
+	fieldModOutputMode:      "Mod Output Mode",
+	fieldModOutputName:      "Output Mod Name",
+	fieldModlistPath:        "MO2 modlist.txt Path",
+}
+
+// scrollToFocused windows body (already split into lines) around whichever
+// line contains the focused field's label, centering it in avail lines. body
+// taller than the terminal was the original bug — nothing scrolled, so
+// fields past the bottom (or the top one, once focus wrapped past it) were
+// simply unreachable. Stateless by design, like renderSectionList's cursor
+// window in summary.go: recomputed fresh every render from m.focused alone,
+// no persisted offset to keep in sync.
+func scrollToFocused(lines []string, focused settingsField, avail int) []string {
+	total := len(lines)
+	if avail <= 0 || total <= avail {
+		return lines
+	}
+	focusedLine := 0
+	if label, ok := settingsFieldLabel[focused]; ok {
+		for i, line := range lines {
+			if strings.Contains(line, label) {
+				focusedLine = i
+				break
+			}
+		}
+	}
+	offset := focusedLine - avail/2
+	if offset < 0 {
+		offset = 0
+	}
+	if maxOffset := total - avail; offset > maxOffset {
+		offset = maxOffset
+	}
+	end := offset + avail
+	visible := append([]string(nil), lines[offset:end]...)
+	if offset > 0 {
+		visible[0] = style.StyleMuted.Render("↑ more above")
+	}
+	if end < total {
+		visible[len(visible)-1] = style.StyleMuted.Render("↓ more below")
+	}
+	return visible
+}
+
 func (m SettingsModel) View() string {
 	var b strings.Builder
-	b.WriteString(style.StyleTitle.Render("Settings") + "\n\n")
 
 	type row struct {
 		label   string
@@ -328,15 +382,34 @@ func (m SettingsModel) View() string {
 		b.WriteString(style.StyleMuted.Render("Full path to your MO2 profile's modlist.txt. Leave empty to scan all mods without priority merging.") + "\n\n")
 	}
 
+	var footer strings.Builder
 	if m.errMsg != "" {
-		b.WriteString(style.StyleDanger.Render(m.errMsg) + "\n\n")
+		footer.WriteString(style.StyleDanger.Render(m.errMsg) + "\n\n")
+	}
+	footer.WriteString(style.KeyHint("tab", "next") + "  ")
+	footer.WriteString(style.KeyHint("space", "toggle") + "  ")
+	footer.WriteString(style.KeyHint("enter", "save") + "  ")
+	footer.WriteString(style.KeyHint("q", "cancel"))
+
+	const bodyFooterSeparator = "\n\n"
+	title := style.StyleTitle.Render("Settings") + "\n\n"
+	bodyLines := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
+
+	// Reserve room for everything that isn't the scrollable body: title lines,
+	// the hardcoded blank-line separator before the footer, and the footer
+	// itself. Must match the final concatenation below exactly — undercounting
+	// here means the assembled string is taller than the terminal, which
+	// silently scrolls the title (the very first lines) off the top instead
+	// of clipping the body like it's supposed to. m.height is 0 until the
+	// first WindowSizeMsg arrives — show everything unclipped rather than
+	// guessing a height.
+	if m.height > 0 {
+		reserved := strings.Count(title, "\n") + strings.Count(bodyFooterSeparator, "\n") + strings.Count(footer.String(), "\n")
+		avail := m.height - reserved
+		bodyLines = scrollToFocused(bodyLines, m.focused, avail)
 	}
 
-	b.WriteString(style.KeyHint("tab", "next") + "  ")
-	b.WriteString(style.KeyHint("space", "toggle") + "  ")
-	b.WriteString(style.KeyHint("enter", "save") + "  ")
-	b.WriteString(style.KeyHint("q", "cancel"))
-	return b.String()
+	return title + strings.Join(bodyLines, "\n") + bodyFooterSeparator + footer.String()
 }
 
 func (m *SettingsModel) SetSize(w, h int) {
