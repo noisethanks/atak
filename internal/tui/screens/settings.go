@@ -64,6 +64,17 @@ type SettingsModel struct {
 	compressionBackend string
 }
 
+// settingsModlistPlaceholder returns the OS-appropriate placeholder text for
+// the MO2 modlist.txt path input. Pure function of goos (rather than reading
+// runtime.GOOS inline) so both branches can be exercised from a single test
+// run regardless of which OS is actually running the tests.
+func settingsModlistPlaceholder(goos string) string {
+	if goos == "windows" {
+		return `C:\Users\user\Gamma\profiles\profilename\modlist.txt`
+	}
+	return "/home/user/Games/GAMMA/profiles/profilename/modlist.txt"
+}
+
 func NewSettings(cfg *config.Config) SettingsModel {
 	mods := textinput.New()
 	mods.SetValue(cfg.ModsDir)
@@ -87,6 +98,7 @@ func NewSettings(cfg *config.Config) SettingsModel {
 	modOutputName.Width = 30
 
 	modlistPath := textinput.New()
+	modlistPath.Placeholder = settingsModlistPlaceholder(runtime.GOOS)
 	modlistPath.SetValue(cfg.ModlistPath)
 	modlistPath.Width = 60
 

@@ -81,6 +81,7 @@ func (m MenuModel) View() string {
 	}
 
 	b.WriteString("\n" + style.KeyHint("↑↓", "navigate") + "  " + style.KeyHint("enter", "select"))
+	b.WriteString("\n" + style.StyleMuted.Render("Tip: on most terminals, Ctrl + and Ctrl - change the font size"))
 	return b.String()
 }
 

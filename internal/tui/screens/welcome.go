@@ -1,6 +1,7 @@
 package screens
 
 import (
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbletea"
@@ -26,18 +27,34 @@ func NewWelcome(cfg *config.Config) WelcomeModel {
 	return NewWelcomeWithNotice(cfg, "")
 }
 
+// welcomePlaceholders returns the OS-appropriate placeholder text for the mods
+// and backup directory inputs. Pulled out as a pure function of goos (rather
+// than reading runtime.GOOS inline) so both branches can be exercised from a
+// single test run regardless of which OS is actually running the tests.
+func welcomePlaceholders(goos string) (mods, backup string) {
+	if goos == "windows" {
+		return `C:\Games\GAMMA\mods`, `C:\Users\user\backups`
+	}
+	return "/home/user/Games/GAMMA/mods", "/home/user/backups"
+}
+
 // NewWelcomeWithNotice creates the welcome screen with an optional notice shown
 // above the path inputs. Used when routing here because a configured path is no
 // longer valid; pass an empty string for the normal first-run case.
 func NewWelcomeWithNotice(cfg *config.Config, notice string) WelcomeModel {
+	// Placeholders mirror the GAMMA-convention candidates detectModsDir()
+	// already looks for, per-OS, so first-run users see a path shaped like
+	// the one the tool would actually have auto-detected.
+	modsPlaceholder, bkupPlaceholder := welcomePlaceholders(runtime.GOOS)
+
 	mods := textinput.New()
-	mods.Placeholder = "/home/user/Games/Anomaly/mods"
+	mods.Placeholder = modsPlaceholder
 	mods.SetValue(cfg.ModsDir)
 	mods.Focus()
 	mods.Width = 60
 
 	bkup := textinput.New()
-	bkup.Placeholder = "/home/user/backups"
+	bkup.Placeholder = bkupPlaceholder
 	bkup.SetValue(cfg.BackupDir)
 	bkup.Width = 60
 
