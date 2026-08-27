@@ -52,14 +52,13 @@ platform-agnostic. See `internal/tools/embed_linux.go` for the canonical pattern
 
 On startup:
 1. Extract every non-empty embedded binary to `os.MkdirTemp`
-2. `chmod 0755` (no-op on Windows, harmless)
+2. `chmod 0755` — gated to `runtime.GOOS == "linux"`, not called on Windows or
+   macOS (a no-op there would be harmless too, but the actual code doesn't
+   attempt it)
 3. Store paths in an `EmbeddedTools` struct passed through the app
 4. `defer tools.Cleanup()` in main
 
-**Binary size:** adding compressonator-bc7e grows the Linux release binary the
-most (~9MB extra); Windows adds ~3.5MB. Current stripped (`-s -w`) sizes:
-Linux ~21MB, Windows ~12MB, macOS ~17MB — all still under the historical 25MB
-target. Watch this ceiling if further binaries land.
+See Build, below, for current stripped binary sizes and the 25MB ceiling.
 
 No other runtime dependencies. The binary must run on any supported platform
 without the user installing anything.
@@ -155,17 +154,11 @@ See `profiles.json` at the repo root for current defaults, and
 
 **Per profile:**
 - `name` — display name shown in scan results UI
-- `format` — BCn compression format. Valid values:
-  - `BC1_UNORM` — opaque textures, no alpha. Smallest file size (0.5 bytes/texel).
-    Best for: opaque diffuse, environment textures without transparency
-  - `BC3_UNORM` — color + alpha (DXT5). Good quality, wide engine support (1 byte/texel).
-    Best for: UI, textures with alpha, general purpose safe default
-  - `BC4_UNORM` — single channel grayscale. Good for masks, AO maps (0.5 bytes/texel)
-  - `BC5_UNORM` — two channel XY normal map data. Required for bump/normal maps (1 byte/texel).
-    Do not use BC3 for normal maps — it will produce incorrect lighting
-  - `BC7_UNORM` — high quality color + alpha. Best visual quality (1 byte/texel).
-    GPU-accelerated on Windows, CPU-only on Linux (~40-60 min for large jobs).
-    Best for: high quality diffuse, detailed character/weapon textures
+- `format` — BCn compression format: `BC1_UNORM`, `BC3_UNORM`, `BC4_UNORM`,
+  `BC5_UNORM`, `BC7_UNORM`. See Compression format quick reference, below, for
+  size/quality/alpha tradeoffs. Two things not in that table: do not use BC3
+  for normal maps, it produces incorrect lighting — use BC5. And BC7 is
+  CPU-only on Linux (~40-60 min for large jobs with texconv).
 - `generateMips` — mip-chain **policy** for this profile, not an unconditional switch.
   The effective per-file decision is resolved from each source DDS header by
   `ShouldGenerateMips` in `internal/compress/texconv.go`. With the default settings it
@@ -200,23 +193,13 @@ See `profiles.json` at the repo root for current defaults, and
   smaller than maxTextureSize are never upscaled.
 
   Implementation: texconv's `-w` and `-h` flags set **exact** pixel dimensions,
-  not maximums — passing one without the other would distort non-square textures.
-  Both dimensions are computed explicitly before calling texconv, scaling by the
-  larger axis so neither exceeds `maxTextureSize`:
-
-  ```go
-  if asset.Width >= asset.Height {
-      targetW = maxTextureSize
-      targetH = int(math.Round(float64(asset.Height) * float64(maxTextureSize) / float64(asset.Width)))
-  } else {
-      targetH = maxTextureSize
-      targetW = int(math.Round(float64(asset.Width) * float64(maxTextureSize) / float64(asset.Height)))
-  }
-  ```
-
-  Both `-w` and `-h` are passed. Guard against upscaling: only enter this branch
-  when at least one dimension exceeds `maxTextureSize` (`||`, not `&&`). Guard
-  against division by zero: only enter when `asset.Width > 0 && asset.Height > 0`.
+  not maximums — passing one without the other would distort non-square
+  textures, so both are always computed together, scaling by the larger axis
+  so neither exceeds `maxTextureSize`. Guards: only resizes when at least one
+  dimension actually exceeds the limit (never upscales), and only when both
+  source dimensions are known and nonzero (avoids divide-by-zero). See the
+  resize calculation in `internal/compress/texconv.go` for the exact
+  arithmetic — not duplicated here so the two can't drift apart.
 
   Recommended use: set on Sky, Terrain, Detail profiles for 4GB VRAM cards.
   Do NOT use on Weapon or Character textures — quality loss is visible up close.
@@ -225,18 +208,14 @@ See `profiles.json` at the repo root for current defaults, and
 
 - `exclude` — optional array of glob patterns. A file matching this profile's
   `patterns` **and** its `exclude` is **declined by this profile**, and matching
-  continues with the profiles after it. The file is not dropped.
+  continues with the profiles after it — not dropped. This is how exceptions
+  get routed to a better-suited later profile; see "The `_bump` suffix is not
+  a reliable indicator", below, for the worked example (Normal Maps → Scope
+  Textures).
 
-  This is the mechanism that routes exceptions to a better-suited profile:
-  Normal Maps declines `*scope*bump*` and `*lens_bump*`, so scope lens bumps fall
-  through to Scope Textures (BC7) rather than being flattened to two-channel BC5.
-  It only works because Normal Maps appears *before* Scope Textures — a decline
-  with no later match leaves the file `Unmatched`, which is surfaced in scan
-  results rather than silently discarded.
-
-  To drop a file outright, use the top-level `excludePatterns`. Those run before
-  profile matching and report the file as `Excluded`, so it stays visible in the
-  scan; a profile decline is silent by comparison.
+  To drop a file outright, use the top-level `excludePatterns` instead. Those
+  run before profile matching and report the file as `Excluded`, so it stays
+  visible in the scan; a profile decline is silent by comparison.
 
 ### Pattern matching rules
 - `*` matches any sequence of characters except `/`
@@ -312,7 +291,7 @@ must come after Normal Maps to receive the declines, and the patterns must not
 also appear in the top-level `excludePatterns`, which would drop the files before
 any profile is consulted.
 
-When in doubt about a texture's channel usage, check with dds_analyze —
+When in doubt about a texture's channel usage, inspect the DDS header directly —
 `UNCOMPRESSED_RGBA` with a `_bump` suffix means BC5 is wrong for that texture.
 
 **The embedded default** (`internal/config/configs/compression_profiles.json`,
@@ -335,12 +314,8 @@ also at repo root as `profiles.json`) ships with broadly correct STALKER convent
   any profile that uses BC7.
 
 **Unmatched files** — DDS files that don't match any profile pattern are surfaced in
-scan results as a separate "Unmatched" bucket. They can be skipped or assigned a format
-manually in the Scan Results screen before compressing.
-
-**Community sharing** — users can share `profiles.json` files tuned for specific mod
-packs. The Settings screen shows the path to `profiles.json` and offers an
-"Open in editor" option using `$EDITOR` (Linux) or `notepad.exe` (Windows).
+scan results as a separate "Unmatched" bucket. They are greyed out and not selectable
+for compression — add patterns to `profiles.json` to include them.
 
 ---
 
@@ -353,21 +328,24 @@ atak/
 ├── go.sum
 ├── SPEC.md
 ├── profiles.json                        # repo-root copy of current default profile
-├── bin/
-│   ├── texconv-linux / texconv-windows.exe / texconv-macos
-│   └── 7zz / 7zz.exe / 7zz-macos
+├── licenses/
+│   └── compressonator-bc7e/             # MIT + Apache-2.0 texts, see About / Licenses Screen
 └── internal/
     ├── tools/
+    │   ├── bin/
+    │   │   ├── texconv-linux / texconv-windows.exe / texconv-macos
+    │   │   ├── compressonator-bc7e-linux / compressonator-bc7e-windows.exe
+    │   │   └── 7zz / 7za.exe / 7zz-macos
     │   ├── embed.go                     # EmbeddedTools struct, extraction, cleanup
-    │   ├── embed_linux.go               # //go:embed bin/texconv-linux, bin/7zz
-    │   ├── embed_windows.go             # //go:embed bin/texconv-windows.exe, bin/7zz.exe
-    │   ├── embed_darwin.go              # //go:embed bin/texconv-macos, bin/7zz-macos
+    │   ├── embed_linux.go               # //go:embed texconv-linux, 7zz, compressonator-bc7e-linux
+    │   ├── embed_windows.go             # //go:embed texconv-windows.exe, 7za.exe, compressonator-bc7e-windows.exe
+    │   ├── embed_darwin.go              # //go:embed texconv-macos, 7zz-macos; compressonatorBin empty
     │   ├── process_linux.go             # setProcAttr / killProcess — Linux/macOS
     │   ├── process_windows.go           # setProcAttr / killProcess — Windows Job Objects
     │   ├── lockfile.go                  # stale-process lockfile (Linux)
     │   └── lockfile_stub.go             # no-op stubs (Windows/macOS)
     ├── config/
-    │   ├── config.go                    # load/save user config and profiles
+    │   ├── config.go                    # load/save user config and profiles; validateConfig
     │   └── configs/
     │       └── compression_profiles.json  # embedded default profiles seed
     ├── scan/
@@ -377,7 +355,9 @@ atak/
     │   ├── parser.go                    # parseModList() — reads MO2 modlist.txt
     │   └── virtual.go                   # buildVirtualFS() — assembles virtual filesystem map
     ├── compress/
-    │   ├── texconv.go                   # exec.Command wrapper, arg builder, BC7 fallback
+    │   ├── backend.go                   # Backend interface, dispatch() + fallback routing
+    │   ├── texconv.go                   # TexconvBackend — arg builder, BC7 fallback
+    │   ├── compressonator.go            # CompressonatorBackend — CPU-forced arg builder
     │   └── worker.go                    # goroutine pool, N concurrent jobs
     ├── archive/
     │   └── sevenzip.go                  # backup, restore, list, verify via 7zz
@@ -401,6 +381,13 @@ atak/
             ├── settings.go              # settings editor
             └── summary.go              # completion stats, error list
 ```
+
+**Not reflected above — verify against the actual repo, not established by
+this document's own text:** the path-validation `dirExists` helper's file
+location, the corresponding test files for it and for `validateConfig`, and
+whether `THIRD_PARTY_LICENSES.txt` / `README.md` are tracked at repo root.
+These are known from prior work on this codebase but weren't independently
+re-confirmed against the filesystem in this pass.
 
 ---
 
@@ -545,11 +532,11 @@ any confirmation dialog. A bad path never reaches a subprocess invocation.
 
 - Create a new LZMA solid archive of the full Anomaly mods directory via:
   ```
-  7zz a -t7z -m0=lzma2 -mx=<backupLevel> -mfb=64 -md=32m -ms=on -bsp1 <output.7z> <mods_dir> -xr!downloads -xr!Downloads
+  7zz a -t7z -m0=lzma2 -mx=<backupLevel> -mfb=16 -md=32k -ms=on -bsp1 <output.7z> <mods_dir> -xr!downloads -xr!Downloads
   ```
-  - `-mx=6` — default balanced compression; user-configurable 1-9 in Settings
-  - `-mfb=64` — 64 fast bytes, well suited for binary/texture data
-  - `-md=32m` — 32MB dictionary, keeps RAM usage sane on large mod lists
+  - `-mx=1` — default fast compression; user-configurable 1-9 in Settings
+  - `-mfb=16` — 16 fast bytes; benchmarked optimal for DDS-heavy mod archives
+  - `-md=32k` — 32KB dictionary; benchmarked optimal for DDS-heavy mod archives
   - `-ms=on` — auto solid block sizing, let 7z decide
   - `-xr!downloads`, `-xr!Downloads` — always exclude downloads folder, both cases for Linux case-sensitivity
 - Parse 7zz `-bsp1` stderr progress into a Bubble Tea progress bar
@@ -566,12 +553,12 @@ explicitly choose to.
 Two restore modes accessible from the Backup Manager:
 
 **Restore Single Mod:**
-- Run `7zz l <archive>` and parse the file listing into a mod name list
+- Run `7zz l -slt <archive>` and parse the file listing into a mod name list
 - Display as a searchable bubbles/list (fuzzy filter on mod name)
 - Confirm dialog showing: mod name, backup date, size on disk
 - Restore via:
   ```
-  7zz x <archive> -o<parent_of_mods_dir> "mods/<ModName>/*" -r -y
+  7zz x <archive> -o<parent_of_mods_dir> "mods/<ModName>/*" -y -bsp1
   ```
 
 **Restore All:**
@@ -579,7 +566,7 @@ Two restore modes accessible from the Backup Manager:
   with backup versions. Continue?"
 - Restore via:
   ```
-  7zz x <archive> -o<parent_of_mods_dir> -r -y
+  7zz x <archive> -o<parent_of_mods_dir> -y -bsp1
   ```
 - No path filter — extracts everything from the archive
 
@@ -648,24 +635,9 @@ when the intent is genuinely "never compress this file".
 
 #### Global Exclusion Patterns
 
-`profiles.json` supports a top-level `excludePatterns` array. Patterns without
-`/` match against the filename (basename). Patterns containing `/` match against
-the full relative path from the mod root — useful for excluding specific texture
-directories regardless of which mod provides them:
-
-```json
-{
-  "excludePatterns": [
-    "fx_sun*",
-    "*_lm.*",
-    "*/textures/ui/SquareDOV/*"
-  ],
-  "profiles": [...]
-}
-```
-
-Evaluated before any profile matching. If a file matches `excludePatterns`, it is
-skipped and counted as "Excluded".
+See `excludePatterns` under profiles.json Format Reference, above, for the
+field itself and its basename-vs-path matching rules. Evaluated before any
+profile matching; a matching file is skipped and counted as "Excluded".
 
 **Counters on scan results screen:**
 - `___ to compress` — total files matched by profiles (excluding excluded files)
@@ -942,23 +914,13 @@ All platforms expose the same interface: `SetProcAttr(cmd)`, `KillProcess(cmd)`,
   - Windows: `C:\Games\GAMMA\mods`, `D:\GAMMA\mods`, `%MO2_GAME_PATH%`
   - All path handling via `filepath.Join` — no hardcoded separators anywhere
 - Backup archive path
-- Backup compression level: integer 1-9, default 6
-  - Displayed in Settings as a text input with inline guide:
-    ```
-    Backup Compression Level (1-9): [6]
-
-    1-3  Fast compression, larger archives
-    4-6  Balanced — recommended for most systems
-    7-9  Maximum compression, significantly slower
-    ```
+- Backup compression level: integer 1-9, default 1
+  - Displayed in Settings as a text input with hint: `"1–9  ·  1 = Fast (default)  ·  6 = Balanced  ·  9 = Maximum"`
   - Validated on input — reject values outside 1-9, non-numeric input reverts to previous value
-  - All other 7z flags (`-mfb=64 -md=32m -ms=on -xr!downloads -xr!Downloads`) are hardcoded, not user-exposed
-- **Compression workers** (`workerCount`) — concurrent texconv processes.
-  Default: 1. Each worker pegs one CPU core. This setting applies to texconv only, not 7-Zip.
-  Settings screen label: "Compression workers (texconv)"
-- Compression is always in-place — no staging directory option
-  - The backup system is the safety net; restore from backup if needed
-  - Removes user confusion and config complexity
+  - All other 7z flags (`-mfb=16 -md=32k -ms=on -xr!downloads -xr!Downloads`) are hardcoded, not user-exposed
+- **Compression workers** (`workerCount`) — concurrent compressor processes.
+  Default: 1. Each worker pegs one CPU core. Invalid input falls back to
+  `max(1, NumCPU/4)`, not to 1 flat. Settings screen label: "Worker Threads".
 - Scan exclusions — editable list of glob patterns, default: `[".*", "downloads", "Downloads", "G.A.M.M.A. UI"]`
 - **Strip mips when disabled** (`stripMipsWhenDisabled`) — bool toggle, default `false`.
   When off, a profile's `generateMips:false` preserves a mipped source's chain (the
@@ -966,17 +928,27 @@ All platforms expose the same interface: `SetProcAttr(cmd)`, `KillProcess(cmd)`,
   chain to a single level regardless of source — smaller output at the cost of fidelity
   for flares/reticles. Never affects `generateMips:true`. Settings screen label:
   "Strip Mips When Disabled". Resolved in `compress.ShouldGenerateMips`.
-- **Compression backend** (`compressionBackend`) — string enum, valid values
-  `"texconv"` (default, all platforms) and `"compressonator-bc7e"` (Linux/Windows
-  only, CPU-only, deterministic across platforms). Any other string, empty string,
-  or wrong type causes Load to return an error and the app will not start.
-  **On darwin, the resolved value is always coerced to `"texconv"` after validation**,
-  so a config synced from another OS can't select an unavailable backend. This
-  darwin coercion is expected to be removed once macOS gains compressonator-bc7e
-  support; the validation logic (`validateConfig`) needs no changes at that point.
-  The Settings row is hidden entirely on darwin rather than shown disabled. Toggle
-  in Settings with `space` / `←` / `→` — two-way selector, not free text.
+- **Compression backend** (`compressionBackend`) — `"texconv"` (default) or
+  `"compressonator-bc7e"` (Linux/Windows only). Row is hidden entirely on
+  darwin. Toggle with `space` / `←` / `→` — two-way selector, not free text.
+  Validation rules and the darwin coercion are documented once, under
+  config.json field groups below — not repeated here.
 - Persist to `os.UserConfigDir()/atak/config.json`
+
+**Settings screen scroll support.** The Settings body can exceed the terminal height.
+`scrollToFocused` (`internal/tui/screens/settings.go`) windows the rendered body lines
+around the focused field: it locates the focused field's label string within the already-
+rendered line slice, computes a centered offset, and clips the visible window to `avail`
+lines (terminal height minus reserved title + footer lines). Stateless by design — no
+persisted scroll offset to keep in sync; the window is recomputed from `m.focused` on
+every render. The first and last visible lines are replaced with `↑ more above` /
+`↓ more below` muted hints when content is clipped. `m.height` is 0 until the first
+`WindowSizeMsg` arrives — show everything unclipped rather than guessing a height.
+
+**Placeholder text is OS-aware.** `settingsModlistPlaceholder(goos string)` returns a
+Linux or Windows example path depending on `runtime.GOOS`. Implemented as a pure function
+of `goos` rather than reading `runtime.GOOS` inline so both branches are testable on any
+platform without OS-specific test runs.
 
 ### config.json field groups
 
@@ -989,8 +961,12 @@ that is not a directory all route the user to the path-config screen (Welcome)
 rather than preventing launch or surfacing a raw subprocess error. When the path
 is set but invalid (non-empty string that fails the existence check), Welcome
 displays the specific bad path so the user understands something changed since
-last run. `modlistPath` is an exception — its existing fallback-to-raw-walk
-behavior on invalid paths is intentional; it does not route to Welcome.
+last run. `modlistPath` is an exception to the Welcome-routing behavior — it
+never blocks app startup either — but it is not a silent fallback. When
+Mod Output Mode is on and `modlistPath` is empty or unreadable, the scan
+itself is blocked with an error surfaced in scan results (`internal/tui/
+screens/scan.go`); there is no raw-mods-directory fallback. See Mod Output
+Mode's Fallback behavior, below, for the exact behavior.
 
 **Required fields** (all other top-level fields): must be explicitly present in the
 JSON with the correct type. A missing key, wrong type, or (for `compressionBackend`)
@@ -1016,9 +992,9 @@ Full config.json schema (see `internal/config/config.go` for canonical struct):
   "modsDir": "/home/user/Anomaly/mods",
   "backupDir": "/home/user/Anomaly/backup",
   "workerCount": 1,
-  "backupLevel": 6,
+  "backupLevel": 1,
   "scanExclusions": [".*", "downloads", "Downloads", "G.A.M.M.A. UI"],
-  "modOutputMode": false,
+  "modOutputMode": true,
   "modOutputName": "ATAK",
   "modlistPath": "",
   "stripMipsWhenDisabled": false,
@@ -1026,9 +1002,9 @@ Full config.json schema (see `internal/config/config.go` for canonical struct):
 }
 ```
 
-Default compression is in-place. The backup system is the safety net.
-When `modOutputMode` is true and `modlistPath` is set, ATAK uses the
-virtual filesystem approach — see Mod Output Mode section.
+Default mode is Mod Output Mode (`modOutputMode: true`). The backup system is the safety
+net for in-place mode. When `modOutputMode` is true and `modlistPath` is set, ATAK uses
+the virtual filesystem approach — see Mod Output Mode section.
 
 ---
 
@@ -1129,12 +1105,10 @@ mods/                            mods/
 
 ### Configuration
 
-New fields in `config.json`:
-- `modOutputMode` — enable/disable. Default false (in-place mode)
-- `modOutputName` — name of the output mod folder. Default "ATAK".
-  Created as `<modsDir>/<modOutputName>/`
-- `modlistPath` — path to MO2 `modlist.txt`. Optional — if not set,
-  Mod Output Mode falls back to in-place behavior
+`modOutputMode`, `modOutputName`, and `modlistPath` — see the config.json
+schema under Settings, above, for defaults and types. Behavior when
+`modlistPath` is unset or unreadable is covered under Fallback behavior,
+below.
 
 ### modlist.txt parsing
 
@@ -1212,48 +1186,13 @@ Output folder: mods/ATAK/   [Delete to recompress all]
 ATAK does not provide a built-in "force recompress" button — deleting
 the folder is the explicit user action.
 
-### Settings screen
-
-New fields in Settings:
-- **Mod Output Mode** toggle (on/off)
-- **Output mod name** text field (default "ATAK"), shown when toggle is on
-- **MO2 modlist.txt path** text field, shown when toggle is on
-  - Shows warning if file not found
-
 ### Fallback behavior
 
-If `modlistPath` is empty or the file cannot be read:
-- Log a warning
-- Fall back to scanning the raw mods directory (current behavior)
-- Mod Output Mode still writes to the output folder, but may include
-  duplicate files (one per mod that has them)
-
----
-
-## Community Profiles
-
-`profiles.json` at the repo root is the current recommended default — it uses BC7 for
-Weapon Textures, Character/Hands, and Diffuse/Color, and is also the embedded seed
-that ships in the binary (`internal/config/configs/compression_profiles.json`).
-
-Users drop alternative `profiles.json` files into `~/.config/atak/profiles.json` to
-switch configurations. Community members can contribute profiles for specific mod packs
-as PRs — low barrier to contribution, high value for the ecosystem.
-
-Recommended for 4GB VRAM cards: set `"maxTextureSize": 1024` on Sky, Terrain, and
-Detail profiles. A `lowvram.json` preset in the repo would be a natural contribution.
-
----
-
-## Future / Post-1.0
-
-- **Atomic compression** — compress to staging directory, verify all files
-  succeeded, then diff-apply in one pass. Failed jobs leave the mod directory
-  untouched. Planned for v1.1.
-- **Scan metadata persistence** — store scan results and compression history
-  to disk. Enables: "already done" tracking, incremental rescans. Requires a
-  simple local database or JSON state file.
-- **stalker-update** — separate binary, same visual identity, handles Anomaly modpack updates selectively. Dependent on community reception of atak.
+If `modlistPath` is empty or the file cannot be read while Mod Output Mode is
+on: the scan is blocked with an error surfaced in scan results — there is no
+fallback to scanning the raw mods directory. Set a valid `modlistPath`, or
+disable Mod Output Mode, to proceed. See `internal/tui/screens/scan.go` for
+the check.
 
 ---
 

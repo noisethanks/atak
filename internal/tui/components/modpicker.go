@@ -4,6 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/noisethanks/atak/internal/tui/style"
 )
 
 // ModSelectedMsg is sent when the user confirms a mod selection.
@@ -70,7 +71,7 @@ func (m ModPicker) Update(msg tea.Msg) (ModPicker, tea.Cmd) {
 }
 
 func (m ModPicker) View() string {
-	return m.list.View()
+	return m.list.View() + "\n" + style.KeyHint("/", "filter")
 }
 
 func (m *ModPicker) SetSize(w, h int) {

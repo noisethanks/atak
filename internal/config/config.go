@@ -280,7 +280,7 @@ func defaultConfig() *Config {
 	return &Config{
 		ModsDir:            detectModsDir(),
 		WorkerCount:        1,
-		BackupLevel:        6,
+		BackupLevel:        1,
 		ScanExclusions:     []string{".*", "downloads", "Downloads", "G.A.M.M.A. UI"},
 		ModOutputMode:      true,
 		ModOutputName:      "ATAK",

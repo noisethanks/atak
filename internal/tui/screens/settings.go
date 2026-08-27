@@ -308,7 +308,7 @@ func (m SettingsModel) View() string {
 		{"Backup Directory", fieldBackupDir, m.inputs[1].View(), ""},
 		{"Worker Threads", fieldWorkers, m.inputs[2].View(), "Conservative default (CPU/4). Increase if compression feels slow and your system has headroom."},
 		{"Backup Compression Level", fieldBackupLevel, m.inputs[3].View(),
-			"1–9  ·  3 = Fast  ·  6 = Balanced (default)  ·  9 = Maximum"},
+			"1–9  ·  1 = Fast (default)  ·  6 = Balanced  ·  9 = Maximum"},
 	}
 
 	for _, r := range rows {

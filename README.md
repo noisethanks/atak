@@ -77,8 +77,7 @@ Disable Mod Output Mode in Settings. Then follow the backup-first workflow below
 ### Backups
 
 - Backup functionality isn't necessary in mod output mode, which leaves your original mods installations intact. We highly recommend making a backup before using in-line mode.
-- Backing up your entire modpack installation will likely take several hours.
-- Backup Compression level default is 6. Increasing it reduces your archive size by a few gigabytes, but will take much longer. Reducing it will increase your archive size. YMMV.
+- Backup Compression level default is 1. Increasing it reduces your archive size by a few gigabytes, but will take much longer. YMMV.
 - 7-Zip backup progress is sparse on large solid archives — the archive is growing even when the progress bar appears stuck
 
 ### Tuning
@@ -98,7 +97,6 @@ Disable Mod Output Mode in Settings. Then follow the backup-first workflow below
 - Create compressed LZMA archives of your full Anomaly mods directory
 - Restore individual mods or your entire modlist from backup
 - Verify archive integrity
-- Expect it to take several hours.
 
 ### Mod Output Mode
 Non-destructive compression that reads your MO2 `modlist.txt` to build a virtual filesystem — the same merged view MO2 presents to the game. Only the winning file for each texture path is compressed (respecting load order). Output goes to a single flat mod folder you add to MO2.
@@ -168,8 +166,7 @@ Config lives at:
   "modsDir": "/path/to/Anomaly/mods",
   "backupDir": "/path/to/backups",
   "workerCount": 1,
-  "backupThreads": 4,
-  "backupLevel": 6,
+  "backupLevel": 1,
   "scanExclusions": [".*", "downloads", "Downloads", "G.A.M.M.A. UI"],
   "modOutputMode": true,
   "modOutputName": "ATAK",
@@ -179,8 +176,7 @@ Config lives at:
 ```
 
 - `workerCount` — concurrent texconv processes (compression only). Each worker pegs one CPU core. Default: 1
-- `backupThreads` — 7-Zip thread count for backup/restore operations. Default: half your CPU threads
-- `backupLevel` — 7-Zip compression level 1-9. Default: 6
+- `backupLevel` — 7-Zip compression level 1-9. Default: 1
 - `scanExclusions` — directories to skip during scan. A plain name (`downloads`, `.*`) matches a directory or mod name anywhere; a path pattern (`*/textures/ui/SquareDOV`) matches a nested directory, using the same pattern syntax as the profile lists above. The matched directory and everything under it is skipped
 - `modOutputMode` — non-destructive output mode. Default: true
 - `modOutputName` — output mod folder name. Default: "ATAK"

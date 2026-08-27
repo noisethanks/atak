@@ -69,7 +69,7 @@ func Backup(ctx context.Context, sevenZipPath, modsDir, outputPath string, backu
 
 		args := []string{
 			"a", "-t7z",
-			"-m0=lzma2", fmt.Sprintf("-mx=%d", backupLevel), "-mfb=64", "-md=32m", "-ms=on",
+			"-m0=lzma2", fmt.Sprintf("-mx=%d", backupLevel), "-mfb=16", "-md=32k", "-ms=on",
 			"-bsp1",
 			outputPath,
 			modsDir,
