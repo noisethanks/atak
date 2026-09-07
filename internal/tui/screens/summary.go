@@ -168,8 +168,12 @@ func renderSectionList(b *strings.Builder, title string, items []string, cursor 
 		}
 		visible = visible[cursor:end]
 	}
-	for _, e := range visible {
-		b.WriteString(itemStyle.Render("  • "+e) + "\n")
+	for i, e := range visible {
+		if i == 0 {
+			b.WriteString(style.StyleSelected.Render("▶ "+e) + "\n")
+		} else {
+			b.WriteString(itemStyle.Render("  • "+e) + "\n")
+		}
 	}
 	b.WriteString("\n")
 }

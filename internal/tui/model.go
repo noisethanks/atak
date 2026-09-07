@@ -24,6 +24,7 @@ const (
 	ScreenBackup
 	ScreenSettings
 	ScreenAbout
+	ScreenUnmatched
 )
 
 // AppModel is the root Bubble Tea model. It owns shared state and delegates
@@ -52,6 +53,7 @@ type AppModel struct {
 	summary    screens.SummaryModel
 	backup     screens.BackupModel
 	settings   screens.SettingsModel
+	unmatched  screens.UnmatchedModel
 }
 
 // New creates the root model.
@@ -152,6 +154,8 @@ func (m AppModel) View() string {
 		return m.settings.View()
 	case ScreenAbout:
 		return m.about.View()
+	case ScreenUnmatched:
+		return m.unmatched.View()
 	default:
 		return ""
 	}
@@ -180,6 +184,8 @@ func (m AppModel) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settings, cmd = m.settings.Update(msg)
 	case ScreenAbout:
 		m.about, cmd = m.about.Update(msg)
+	case ScreenUnmatched:
+		m.unmatched, cmd = m.unmatched.Update(msg)
 	}
 	return m, cmd
 }
@@ -196,6 +202,7 @@ func (m AppModel) propagateSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.backup.SetSize(msg.Width, msg.Height)
 	m.settings.SetSize(msg.Width, msg.Height)
 	m.about.SetSize(msg.Width, msg.Height)
+	m.unmatched.SetSize(msg.Width, msg.Height)
 	return m, nil
 }
 
@@ -272,6 +279,12 @@ func (m AppModel) handleNavigate(msg screens.NavigateMsg) (tea.Model, tea.Cmd) {
 		notice, _ := msg.Data.(string)
 		m.welcome = screens.NewWelcomeWithNotice(m.cfg, notice)
 		return m, m.welcome.Init()
+
+	case screens.NavUnmatched:
+		m.screen = ScreenUnmatched
+		m.unmatched = screens.NewUnmatched(m.scanAssets)
+		m.unmatched.SetSize(m.width, m.height)
+		return m, m.unmatched.Init()
 
 	case screens.NavQuit:
 		return m, tea.Quit

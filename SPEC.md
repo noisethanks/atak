@@ -440,6 +440,7 @@ Welcome / Path Config
    [enter]  Run Selected Profile
    [r]      Run All
    [m]      Run Selected Mod → ModPicker → Compress
+   [u]      View Unmatched → Unmatched Files (read-only, back with [q])
    [q]      Main Menu
         │
         ▼
@@ -611,6 +612,33 @@ textures to unsupported formats.
 - `Excluded` — files matching global excludePatterns, shown for transparency
 - All buckets shown regardless of count (zero-hit profiles still render)
 
+#### Unmatched Files Screen
+
+Accessible from Scan Results with `[u]` (only when unmatched count > 0). Shows
+every unmatched file with mod name, relative path within that mod, DDS format
+code, dimensions, and mip count — all already parsed during scan.
+
+**This screen is permanently read-only. It must never gain a compress action.**
+Unmatched files bypass profiles.json by definition — auto-compressing
+unrecognized formats is exactly what the removed Auto (alpha)/(no alpha) bucket
+did, and it caused game crashes on engine-specific textures. The constraint is
+architectural, not a first-pass simplification.
+
+Display details:
+- List uses the same j/k window-of-10 cursor component as the error list and
+  Backend fallbacks on the summary screen (`renderSectionList`).
+- Each row shows `mod name / relative path`. When the combined string exceeds
+  the terminal width, middle path segments are elided (`mod / … / filename.dds`),
+  keeping the mod name and filename always visible since those are the two most
+  diagnostic pieces. Truncation is never the only way to see the full path.
+- Selecting an item (j/k to the top of the window) shows its complete untruncated
+  mod name, relative path, format, dimensions, and mip count in a detail panel
+  below the list.
+- Mod name is kept attached to the path (not stripped) because in an in-place
+  scan the same relative path can appear under multiple mods simultaneously;
+  mod name is what disambiguates which physical file is which.
+- `[q]` returns to Scan Results (not the main menu).
+
 #### Profile-Level Exclusions
 
 Profiles support an optional `exclude` array — patterns that match the profile's
@@ -705,6 +733,7 @@ Scan Results keybindings:
   [enter]   run selected profile (whichever profile row is highlighted)
   [r]       run all profiles
   [m]       run selected mod — opens ModPicker, then compresses that mod only
+  [u]       open Unmatched Files screen (only shown when unmatched count > 0)
   [q]       back to main menu
 ```
 

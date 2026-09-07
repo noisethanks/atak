@@ -148,6 +148,10 @@ func (m ResultsModel) Update(msg tea.Msg) (ResultsModel, tea.Cmd) {
 				m.showModPicker = true
 				m.modPicker = components.NewModPicker(m.mods, m.width-4, max(5, m.height-8))
 			}
+		case "u":
+			if m.modlistErr == "" && len(m.unmatched) > 0 {
+				return m, func() tea.Msg { return NavigateMsg{To: NavUnmatched} }
+			}
 		case "esc", "q":
 			return m, func() tea.Msg { return NavigateMsg{To: NavMenu} }
 		}
@@ -316,6 +320,9 @@ func (m ResultsModel) View() string {
 	b.WriteString(style.KeyHint("enter", "run profile") + "  ")
 	b.WriteString(style.KeyHint("r", "run all") + "  ")
 	b.WriteString(style.KeyHint("m", "run single mod") + "  ")
+	if len(m.unmatched) > 0 {
+		b.WriteString(style.KeyHint("u", "view unmatched") + "  ")
+	}
 	b.WriteString(style.KeyHint("q", "back") + "\n")
 	b.WriteString(style.StyleMuted.Render("Tip: press [m] to test on one mod first"))
 	return b.String()
