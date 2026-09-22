@@ -298,9 +298,10 @@ See `profiles.json` at the repo root for current defaults, and
 - `name` — display name shown in scan results UI
 - `format` — BCn compression format: `BC1_UNORM`, `BC3_UNORM`, `BC4_UNORM`,
   `BC5_UNORM`, `BC7_UNORM`. See Compression format quick reference, below, for
-  size/quality/alpha tradeoffs. Two things not in that table: do not use BC3
-  for normal maps, it produces incorrect lighting — use BC5. And BC7 is
-  CPU-only on Linux (~40-60 min for large jobs with texconv).
+  size/quality/alpha tradeoffs. Two things not in that table: BC5 keeps two
+  channels and is right only for a true XY normal map, never for an X-Ray
+  `_bump` (see below). And BC7 is CPU-only on Linux (~40-60 min for large jobs
+  with texconv).
 - `generateMips` — mip-chain **policy** for this profile, not an unconditional switch.
   The effective per-file decision is resolved from each source DDS header by
   `ShouldGenerateMips` in `internal/compress/texconv.go`. With the default settings it
@@ -353,8 +354,8 @@ See `profiles.json` at the repo root for current defaults, and
 - `exclude` — optional array of glob patterns. A file matching this profile's
   `patterns` **and** its `exclude` is **declined by this profile**, and matching
   continues with the profiles after it — not dropped. This is how exceptions
-  get routed to a better-suited later profile; see "The `_bump` suffix is not
-  a reliable indicator", below, for the worked example (Normal Maps → Scope
+  get routed to a better-suited later profile; see "An X-Ray `_bump` is never a
+  two-channel normal map", below, for the worked example (Bump Maps → Scope
   Textures).
 
   To drop a file outright, use the top-level `excludePatterns` instead. Those
@@ -402,7 +403,7 @@ since patterns are authored rather than observed.
 | BC1 | Good | 0.5 bpt | No | Yes | Opaque diffuse |
 | BC3 | Good | 1 bpt | Yes | Yes | UI, general alpha |
 | BC4 | Good | 0.5 bpt | No | Yes | Grayscale/masks |
-| BC5 | Excellent | 1 bpt | No | Yes | Normal maps only |
+| BC5 | Excellent | 1 bpt | No | Yes | Two-channel normal maps only |
 | BC7 | Excellent | 1 bpt | Yes | No (CPU only) | High quality diffuse |
 
 bpt = bytes per texel
@@ -415,28 +416,29 @@ More specific path patterns must come before more general ones:
 - `*/textures/sky/night/*` must appear before `*/textures/sky/*`
 - Filename suffix patterns (`*_bump.*`) are order-independent since they don't overlap
 
-**The `_bump` suffix is not a reliable indicator of BC5 compatibility.**
-Some mods use `_bump` naming for textures that carry more than XY normal data —
-scope lens reflection textures in particular often use all 4 RGBA channels for
-reflection intensity, gloss, and specular data. Compressing these with BC5 (which
-discards B and A channels) causes visual artifacts — loss of reflections, banding
-on metallic surfaces.
+**An X-Ray `_bump` is never a two-channel normal map.**
+The engine's bump format packs four channels, and the shaders read all of them:
+`sload.h` samples `float4 Nu = s_bump.Sample(...)`, takes gloss from `Nu.x` and
+unpacks the normal from `Nu.wzy`, so alpha and blue carry two of the three normal
+components. The paired `_bump#` file carries parallax height in its alpha. BC5
+stores two channels and a sampled BC5 texture returns 0 for blue and 1 for alpha,
+so it does not degrade these textures, it deletes most of what they hold.
 
-Mitigation:
-- Add `"exclude": ["*scope*bump*", "*lens_bump*"]` to the Normal Maps profile
-- Add a dedicated Scope Textures profile using BC7_UNORM before Weapon Textures
-- BC7 correctly handles all 4 channels and is appropriate for complex
-  metallic/reflective surfaces regardless of naming convention
+This is why the defaults ship two profiles rather than one:
+- **Bump Maps** (BC7_UNORM) claims `*_bump.*`, `*_bump#.*`, `*nbump*` and
+  `*_normalbump.*`. BC7 keeps all four channels at the same 1 byte per texel BC5
+  would have cost, so the correct format is also the free one.
+- **Normal Maps** (BC5_UNORM) keeps only the suffixes that really do mean XY
+  normal data: `*_normal.*`, `*_nm.*`, `*_nrm.*`, `*_norm.*` and their variants.
+  In a S.T.A.L.K.E.R. install those are a handful of files from authors following
+  a non-native convention.
 
-The two steps are one mechanism, not two independent ones: the `exclude` makes
-Normal Maps *decline* those files so they keep matching downward, and the Scope
-Textures profile is what catches them. Ordering is load-bearing — Scope Textures
-must come after Normal Maps to receive the declines, and the patterns must not
-also appear in the top-level `excludePatterns`, which would drop the files before
-any profile is consulted.
-
-When in doubt about a texture's channel usage, inspect the DDS header directly —
-`UNCOMPRESSED_RGBA` with a `_bump` suffix means BC5 is wrong for that texture.
+The naming is the only signal available at scan time. The `.thm` sidecar beside a
+texture is better evidence, and it is often absent: of the 107 files that matched
+the old single BC5 profile in one GAMMA modlist, 77 declared the SDK bump type,
+11 declared the generic image type, 18 shipped no `.thm` at all, and exactly one
+declared the normal-map type — the only one of the 107 not named `_bump`. Read the
+sidecar when in doubt, but expect to fall back to the suffix.
 
 **The embedded default** (`internal/config/configs/compression_profiles.json`,
 also at repo root as `profiles.json`) ships with broadly correct STALKER conventions:
@@ -448,9 +450,9 @@ also at repo root as `profiles.json`) ships with broadly correct STALKER convent
   art with hard alpha edges. Users who want it can set BC7 in their own
   `profiles.json`; there is no runtime cost either way, since BCn decompresses in
   hardware at the same speed regardless of format.
-- **Scope Textures use BC7** — scope bump textures often use all 4 RGBA channels
-  for reflection/gloss data, not just XY normals. BC5 would destroy B and A.
-  This is the only BC7 profile that stays small enough on Linux to be affordable.
+- **Scope Textures use BC7** — scope lens textures use all 4 RGBA channels for
+  reflection and gloss data. The profile exists so every part of a scope, bump
+  and diffuse alike, lands in one place rather than splitting across two.
 - **Weapon Textures, Character/Hands, and Diffuse/Color use BC7** — high visual
   impact textures where quality matters. BC7 is GPU-accelerated on Windows and
   stays manageable on Linux because these categories are smaller than UI.
@@ -795,17 +797,17 @@ reaches the end with no match becomes `Unmatched`.
 
 ```json
 {
-  "name": "Normal Maps",
-  "format": "BC5_UNORM",
+  "name": "Bump Maps",
+  "format": "BC7_UNORM",
   "generateMips": true,
-  "patterns": ["*_bump.*", "*_normal.*"],
+  "patterns": ["*_bump.*", "*_bump#.*"],
   "exclude": ["*scope*bump*", "*lens_bump*"]
 }
 ```
 
-Here Normal Maps claims bump maps generally but hands scope and lens bumps to
-whichever later profile wants them — Scope Textures, at BC7. Declining is
-therefore a routing decision, not a skip. Use the top-level `excludePatterns`
+Here Bump Maps claims bump maps generally but hands scope and lens bumps to
+whichever later profile wants them — Scope Textures. Declining is therefore a
+routing decision, not a skip. Use the top-level `excludePatterns`
 when the intent is genuinely "never compress this file".
 
 #### Global Exclusion Patterns

@@ -114,13 +114,14 @@ Default profiles cover the most common texture categories:
 
 | Profile | Format | Detection method |
 |---|---|---|
-| Normal / bump maps | BC5 | `_bump`, `_normal`, `_nrm`, `_norm` suffixes |
+| Bump maps | BC7 | `_bump`, `_bump#`, `*nbump*`, `_normalbump` suffixes |
+| Normal maps | BC5 | `_normal`, `_nm`, `_nrm`, `_norm` suffixes |
 | Sights / Reticles | BC3 | `scope_reticles/`, `bonus_sights/`, `*crosshair*` |
 | Scope textures | BC7 | `*scope*diff*`, `*scope*bump*`, `*lens_bump*`, `*/textures/wpn/scope_*` |
 | UI / Icons | BC3 | `textures/ui/` path |
-| Diffuse / color | BC3 | `_diff`, `_base`, `_col`, `_d` suffixes |
-| Weapon textures | BC3 | `textures/wpn/`, `textures/rwap/` paths |
-| Character / hands | BC3 | `textures/act/`, `textures/MK/` paths |
+| Diffuse / color | BC7 | `_diff`, `_base`, `_col`, `_d` suffixes |
+| Weapon textures | BC7 | `textures/wpn/`, `textures/rwap/` paths |
+| Character / hands | BC7 | `textures/act/`, `textures/MK/` paths |
 | Sky textures | BC3 | `textures/sky/` path |
 | Terrain / detail | BC3 | `textures/terrain/`, `textures/detail/` paths |
 | Items | BC3 | `textures/items/`, `textures/item/`, `textures/usable_items/` paths |
@@ -140,14 +141,14 @@ ATAK uses BCn block compression — a GPU-native format that decompresses in har
 |---|---|---|---|---|---|---|
 | BC1 | `BC1_UNORM` | No | Good | 0.5 bpt | Yes | Opaque diffuse, environment |
 | BC3 | `BC3_UNORM` | Yes | Good | 1 bpt | Yes | UI, general alpha textures |
-| BC5 | `BC5_UNORM` | No | Excellent | 1 bpt | Yes | Normal maps only |
+| BC5 | `BC5_UNORM` | No | Excellent | 1 bpt | Yes | Two-channel normal maps only |
 | BC7 | `BC7_UNORM` | Yes | Excellent | 1 bpt | No (CPU) | High quality diffuse, weapons |
 
 *bpt = bytes per texel*
 
-**BC5 is required for normal maps** — using BC3 on normal maps produces incorrect lighting. Do not change the Normal Maps profile format.
+**BC5 is for two-channel normal maps only** — it is the best format for a texture that stores nothing but X and Y, and the wrong format for anything else, because a sampled BC5 texture returns 0 for blue and 1 for alpha. It costs the same 1 byte per texel as BC7, so there is no size reason to reach for it. Never set it on a profile that can match `_bump`.
 
-**BC7 on Linux** is CPU-only — no GPU acceleration available. Expect 40-60 minutes for large jobs. For faster Linux compression, use BC3 for all profiles (the default). Quality difference is minimal at normal viewing distances.
+**BC7 on Linux** is CPU-only with texconv — no GPU acceleration available. Expect 40-60 minutes for large jobs. The compressonator-bc7e backend is CPU-only everywhere but 20x-200x faster, which is why it is the recommended one. For faster Linux compression with texconv, set the BC7 profiles to BC3 — that is a change from the shipped defaults, which use BC7 for bump maps, diffuse, scopes, weapons and characters. Quality difference is minimal at normal viewing distances.
 
 **Mip chains:** ATAK resolves mip generation per file. World-texture profiles (`generateMips: true`) always get a full chain built with cubic filtering, letting the engine load lower-resolution versions for distant objects and reducing effective VRAM further. Fixed-size art profiles (`generateMips: false`) follow the source instead — a texture that shipped with mips keeps them, one that didn't stays single-level. This matters for flares and scope reticles: many ship a mip chain and flattening them makes them alias and read as the wrong shade in-game. To force the old always-strip behavior for `generateMips: false`, enable `stripMipsWhenDisabled` in Settings. Keep your in-game texture quality setting at High — lowering it on top of BCn compression will reduce visual quality unnecessarily.
 
@@ -198,12 +199,12 @@ Controls which textures get compressed and how. Created on first run from embedd
   "excludePatterns": ["fx_sun*", "fx_*", "lut_*", "*#small*", "*cube#*"],
   "profiles": [
     {
-      "name": "Normal Maps",
-      "format": "BC5_UNORM",
+      "name": "Bump Maps",
+      "format": "BC7_UNORM",
       "generateMips": true,
       "maxTextureSize": 0,
-      "patterns": ["*_bump.*", "*_normal.*"],
-      "exclude": []
+      "patterns": ["*_bump.*", "*_bump#.*"],
+      "exclude": ["*scope*bump*", "*lens_bump*"]
     }
   ]
 }
@@ -219,7 +220,7 @@ Controls which textures get compressed and how. Created on first run from embedd
 - `generateMips` — mip-chain **policy**, not an on/off switch. `true` forces a full chain — use for world textures (diffuse, normals, weapons, terrain, sky) that minify with distance. `false` **preserves the source's own choice**: a source that shipped mips (many flares, scope reticles) keeps its chain, one that didn't (most flat UI art) stays single-level. Set the `stripMipsWhenDisabled` config option to make `false` strip unconditionally instead
 - `maxTextureSize` — cap output resolution. `0` = no limit. Set to `1024` on sky/terrain profiles for 4GB VRAM cards. Textures smaller than this value are never scaled up to it. Block alignment is separate and can still round a dimension up by as much as 3 pixels
 - `patterns` — glob patterns matched against filename or full path
-- `exclude` — optional. A file matching this profile's `patterns` **and** its `exclude` is declined by this profile, and matching continues with later profiles. Use it to route exceptions elsewhere — Normal Maps declines `*scope*bump*` so scope lens bumps fall through to Scope Textures (BC7) instead of being flattened to two-channel BC5. To drop a file outright, use the top-level `excludePatterns` instead
+- `exclude` — optional. A file matching this profile's `patterns` **and** its `exclude` is declined by this profile, and matching continues with later profiles. Use it to route exceptions elsewhere — Bump Maps declines `*scope*bump*` so scope lens bumps fall through to Scope Textures, which keeps every part of a scope under one profile. To drop a file outright, use the top-level `excludePatterns` instead
 
 **Pattern syntax:**
 - `*` matches any characters except `/`; `?` matches a single character except `/`
@@ -238,9 +239,9 @@ Community profiles available in the `profiles/` directory in the repository:
 
 ## Compression quality
 
-Default profiles use BC3 for all textures except Normal Maps (BC5) and Scope Textures (BC7). BC3 produces minimal visible quality loss at typical Anomaly viewing distances and compresses quickly on all platforms.
+Default profiles use BC7 where the detail is visible up close — weapons, characters, diffuse color and bump maps — and BC3 for flat art, sky, terrain and items. BC5 is reserved for true two-channel normal maps. BC3 produces minimal visible quality loss at typical Anomaly viewing distances and compresses quickly on all platforms.
 
-Scope Textures is the one BC7 profile in the defaults. Scope lens textures often pack reflection, gloss, and specular data across all four RGBA channels, so BC5 would discard blue and alpha and BC3 would band the gradients. It covers a small number of files, so the CPU cost on Linux stays bounded — see [Compression formats](#compression-formats) for the BC7 caveat.
+Scope lens textures pack reflection, gloss, and specular data across all four RGBA channels, so BC5 would discard blue and alpha and BC3 would band the gradients. They get their own profile so a scope stays one unit, rather than splitting across the bump and diffuse profiles. It covers a small number of files, so the CPU cost on Linux stays bounded — see [Compression formats](#compression-formats) for the BC7 caveat.
 
 For higher quality weapon and character textures, copy `profiles/quality.json` from the repository to your config directory — this uses BC7 for weapons and characters. Recommended for Windows users with GPU acceleration.
 
