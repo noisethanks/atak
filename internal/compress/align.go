@@ -29,16 +29,21 @@ type resizePlan struct {
 	Width   int
 	Height  int
 	Aligned bool // block alignment, not maxTextureSize, is what moved a dimension
+	Convert bool // the resample runs for the channel order, whatever the size says
 }
 
 func (p resizePlan) needed() bool { return p.Width > 0 && p.Height > 0 }
 
 // reason names the fallback this plan should be reported under. Block alignment
-// wins when both rules fired, because it is the one the user did not ask for and
-// the one that explains a dimension they never configured.
+// wins when several rules fired, because it is the one the user did not ask for
+// and the one that explains a dimension they never configured. A channel-order
+// conversion is invisible in the file's header, so it is reported next.
 func (p resizePlan) reason() string {
-	if p.Aligned {
+	switch {
+	case p.Aligned:
 		return FallbackBlockAlign
+	case p.Convert:
+		return FallbackChannelOrder
 	}
 	return FallbackResize
 }

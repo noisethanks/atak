@@ -3,6 +3,7 @@ package compress
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/noisethanks/atak/internal/scan"
@@ -33,14 +34,17 @@ const compressonatorLoadErrPattern = "Could not load source file"
 // dispatch routes a job through primary and covers the two cases primary
 // can't handle by transparently retrying on fallback:
 //
-//   - Pre-run resize gap: compressonator-bc7e has no `-w`/`-h` equivalent, so
-//     any file that needs an exact output size has to involve texconv rather
-//     than silently keeping its original size. Two rules put a file there —
-//     the MaxTextureSize budget, and block alignment for a BCn target whose
-//     source dimensions are not a multiple of 4 (see planResize).
-//     resampleThenPrimary tries the cheap split first, letting texconv resize
-//     into a temporary file and the configured encoder do the encoding; only
-//     if that fails does texconv take the whole job.
+//   - Pre-run gap: compressonator-bc7e has no `-w`/`-h` equivalent, so any file
+//     that needs an exact output size has to involve texconv rather than
+//     silently keeping its original size. Two rules put a file there — the
+//     MaxTextureSize budget, and block alignment for a BCn target whose source
+//     dimensions are not a multiple of 4 (see planResize). A third rule sends a
+//     file down the same path for a different reason: a 24-bit source has to be
+//     widened to RGBA first, because compressonator reads 24-bit with red and
+//     blue transposed (see prepassPlan). resampleThenPrimary tries the cheap
+//     split first, letting texconv write the intermediate and the configured
+//     encoder do the encoding; only if that fails does texconv take the whole
+//     job.
 //   - Post-run DDS-reader gap: compressonator's DDS loader rejects some
 //     subvariants (see compressonatorLoadErrPattern). On that specific error
 //     substring, retry via texconv. If texconv also fails, the file is
@@ -53,11 +57,15 @@ const compressonatorLoadErrPattern = "Could not load source file"
 // automatic, transparent, and recorded in CompressionResult so summary UI
 // can attribute mismatches correctly.
 func dispatch(ctx context.Context, primary, fallback Backend, job Job) CompressionResult {
-	if fallback != nil && needsResize(job) {
-		plan := planResize(job.Asset, job.Format, job.MaxTextureSize)
+	plan := prepassPlan(primary, job)
+	if fallback != nil && (plan.needed() || plan.Convert) {
 		if r, ok := resampleThenPrimary(ctx, primary, fallback, job, plan); ok {
 			return r
 		}
+		// Two ways to land here. The split was tried and did not work, or the file
+		// needs a channel-order conversion and has no usable dimensions to resample
+		// to. Either way the fallback takes the whole job, which is the safe answer
+		// for a 24-bit source: texconv reads it correctly and needs no size.
 		r := fallback.Compress(ctx, job)
 		// Never overwrite a reason the fallback already attributed: a BC7 encoder
 		// rejection that changed the format matters more than why the file was
@@ -131,6 +139,7 @@ func resampleThenPrimary(ctx context.Context, primary, fallback Backend, job Job
 	if !r.Success {
 		return CompressionResult{}, false
 	}
+	restoreOutputName(job, inner)
 
 	// Report the original file, not the temporary one: the asset the user
 	// recognizes, and a Before size that makes the saved-bytes total correct.
@@ -143,10 +152,80 @@ func resampleThenPrimary(ctx context.Context, primary, fallback Backend, job Job
 	return r, true
 }
 
-// needsResize reports whether a job has to reach an encoder that can resize to an
-// exact size. Two things put it there: the user's maxTextureSize budget, and block
-// alignment for a BCn target whose source is not a multiple of 4. planResize owns
-// both rules so dispatch and texconv's Run can never disagree about the target.
-func needsResize(job Job) bool {
-	return planResize(job.Asset, job.Format, job.MaxTextureSize).needed()
+// restoreOutputName puts the source's own extension case back on the file the
+// split path just wrote.
+//
+// texconv always writes a lowercase .dds extension, so the intermediate for a
+// Foo.DDS source is named foo.dds, and the encoder names its output after the
+// file it read. The plain path never has this problem, because there the encoder
+// reads Foo.DDS itself and keeps the spelling.
+//
+// The mismatch is not cosmetic. In place, the compressed foo.dds lands beside an
+// untouched Foo.DDS and the source is never replaced. In mod-output mode, the job
+// records the output as Foo.DDS while the file on disk is foo.dds, so the
+// incremental skip in worker.go never finds it and the file is re-encoded on
+// every run.
+func restoreOutputName(job, inner Job) {
+	want := filepath.Base(job.Asset.Path)
+	got := filepath.Base(inner.Asset.Path)
+	if want == got {
+		return
+	}
+	from := filepath.Join(job.OutputDir, got)
+	to := filepath.Join(job.OutputDir, want)
+	if from == to {
+		return
+	}
+	if _, err := os.Stat(from); err != nil {
+		return // the encoder named it something else; leave it alone
+	}
+	_ = os.Rename(from, to)
+}
+
+// prepassPlan reports what texconv has to do to a source before the primary
+// encoder reads it. A zero plan means the primary can take the file as it is.
+//
+// Two rules are about size and belong to planResize: the user's maxTextureSize
+// budget, and block alignment for a BCn target whose source is not a multiple of
+// 4. planResize owns both so dispatch and texconv's Run can never disagree about
+// the target.
+//
+// The third rule is about channel order. compressonator-bc7e reads a 24-bit DDS
+// with red and blue transposed, so a 24-bit source encoded by it comes out with
+// the two swapped — no error, no warning, just a wrong picture. Routing the file
+// through the same resample split fixes it, because the intermediate texconv
+// writes is RGBA and compressonator reads that correctly. The conversion needs no
+// new machinery: the plan keeps the source's own dimensions, so the resample is a
+// format change and nothing else.
+//
+// A source with unknown dimensions gets Convert without a size. An exact resample
+// needs both axes, and a DDS header can carry a zero there, so the split is not
+// available for such a file. dispatch reads Convert separately for that reason:
+// the whole job goes to texconv instead, which is slower and correct. Failing
+// open here would hand the file straight back to the encoder that transposes it.
+func prepassPlan(primary Backend, job Job) resizePlan {
+	plan := planResize(job.Asset, job.Format, job.MaxTextureSize)
+	if transposes24Bit(primary.Name(), job.Asset.CurrentFmt) {
+		plan.Convert = true
+		if !plan.needed() {
+			plan.Width, plan.Height = job.Asset.Width, job.Asset.Height
+		}
+	}
+	return plan
+}
+
+// transposes24Bit reports whether this backend would read this source format with
+// its channels out of order. Scoped to the one measured pairing rather than
+// "convert every odd format", so an unrelated future failure stays visible
+// instead of being absorbed by a silent conversion. ParseDDS reports every 24-bit
+// DDS as R8G8B8_UNORM whatever its masks say.
+func transposes24Bit(backendName, sourceFormat string) bool {
+	if backendName != "compressonator-bc7e" {
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(sourceFormat)) {
+	case "R8G8B8_UNORM", "B8G8R8_UNORM":
+		return true
+	}
+	return false
 }

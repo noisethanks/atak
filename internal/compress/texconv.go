@@ -23,6 +23,7 @@ const (
 	FallbackResize        = "compressonator-resize"       // compressonator can't -w/-h → routed to texconv
 	FallbackReaderGap     = "compressonator-reader-gap"   // compressonator DDS reader rejected → retried texconv
 	FallbackBlockAlign    = "block-align"                 // source dims not a multiple of 4 → resized so the engine's loader never re-encodes
+	FallbackChannelOrder  = "channel-order"               // 24-bit source → converted to RGBA first, because compressonator reads 24-bit with red and blue transposed
 )
 
 // FallbackLabel returns a human-readable label for a fallback reason.
@@ -36,6 +37,8 @@ func FallbackLabel(reason string) string {
 		return "compressonator-bc7e → texconv (DDS reader gap)"
 	case FallbackBlockAlign:
 		return "resized to a multiple of 4 (block alignment)"
+	case FallbackChannelOrder:
+		return "converted to RGBA (24-bit channel order)"
 	}
 	return reason
 }
