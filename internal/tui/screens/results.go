@@ -17,9 +17,14 @@ import (
 // ScanResultData is passed from Scan → Results via NavigateMsg.
 type ScanResultData struct {
 	Assets       []scan.Asset
-	Skipped      int
+	Stats        scan.Stats
 	ModlistError string // non-empty when mod output mode is misconfigured; blocks compression
 }
+
+// unreadableListLimit caps how many unreadable filenames the results screen
+// names before it falls back to a count. A handful is enough to start looking;
+// a mod pack with hundreds would otherwise push the key hints off the screen.
+const unreadableListLimit = 3
 
 // ResultsModel shows scan results grouped by compression profile.
 type ResultsModel struct {
@@ -27,6 +32,7 @@ type ResultsModel struct {
 	unmatched     []assetRef   // informational only, not selectable
 	excluded      []assetRef   // informational only, not selectable
 	skipped       int
+	unreadable    []scan.UnreadableFile // found, could not be read, nothing else known
 	cursor        int
 	mods          []string
 	showModPicker bool
@@ -97,7 +103,8 @@ func NewResults(data ScanResultData, cfg *config.Config) ResultsModel {
 		groups:     ordered,
 		unmatched:  unmatched,
 		excluded:   excluded,
-		skipped:    data.Skipped,
+		skipped:    data.Stats.Skipped,
+		unreadable: data.Stats.Unreadable,
 		mods:       mods,
 		modlistErr: data.ModlistError,
 		cfg:        cfg,
@@ -315,6 +322,18 @@ func (m ResultsModel) View() string {
 
 	// Excluded — informational, not selectable.
 	b.WriteString(style.StyleMuted.Render(fmt.Sprintf("  Excluded (%d files)", len(m.excluded))) + "\n")
+
+	// Unreadable — named .dds, but the header could not be read. The game cannot
+	// load these either, so they are the user's to fix, not ATAK's to compress.
+	if len(m.unreadable) > 0 {
+		b.WriteString(style.StyleDanger.Render(fmt.Sprintf("  Unreadable (%d files)", len(m.unreadable))) + "\n")
+		for _, u := range m.unreadable[:min(len(m.unreadable), unreadableListLimit)] {
+			b.WriteString(style.StyleMuted.Render("    "+filepath.Base(u.Path)+" — "+u.Reason) + "\n")
+		}
+		if rest := len(m.unreadable) - unreadableListLimit; rest > 0 {
+			b.WriteString(style.StyleMuted.Render(fmt.Sprintf("    …and %d more", rest)) + "\n")
+		}
+	}
 
 	b.WriteString("\n")
 	b.WriteString(style.KeyHint("enter", "run profile") + "  ")

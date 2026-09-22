@@ -819,6 +819,13 @@ profile matching; a matching file is skipped and counted as "Excluded".
 - `___ skipped (compressed)` — files already compressed, skipped by scanner
 - `___ unmatched` — uncompressed files with no profile match (informational)
 - `___ excluded` — files matching global excludePatterns
+- `___ unreadable` — named `.dds` but the header could not be read, or the file
+  could not be opened at all. Shown only when the count is non-zero, with up to
+  three filenames and the reason. Both walkers used to drop these with a bare
+  `continue`, so a mod shipping a PNG named `.dds` — which the engine cannot load
+  either — left no trace anywhere in the UI. `scan.Stats` keeps the two apart:
+  `Skipped` is a decision ATAK made correctly, `Unreadable` is one it could not
+  make.
 
 **Unknown format handling:**
 Files where the FourCC or DXGI format code is not recognized are treated as
