@@ -1362,6 +1362,15 @@ priority, so higher-priority mods overwrite lower-priority entries for the same
 relative path. Result: every key maps to the winning (highest-priority) source
 file. Passed to the scanner instead of walking the mods directory directly.
 
+Conflicts resolve **case-insensitively**, because MO2 merges that way: the game
+sees one gamedata tree, so `ui_icon_ump.dds` and `ui_icon_ump.DDS` are one file in
+it. The map is deduplicated on the case-folded path while the surviving key keeps
+the winning mod's own spelling, since in mod-output mode that key is the path the
+output file is written to. Keyed by exact case, two spellings survived as two
+entries, load order stopped deciding the winner, and both became compression jobs
+that wrote the same output file — so the loser's texture could be the one left in
+the output folder.
+
 ### Output structure
 
 Compressed files are written to `<modsDir>/<modOutputName>/gamedata/...`:
