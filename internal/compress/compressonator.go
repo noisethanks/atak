@@ -150,7 +150,9 @@ func compressonatorArgs(format string, generateMips bool, inputPath, outputPath 
 	}
 	if generateMips {
 		// -mipsize 1 asks Compressonator to build the chain down to a 1-pixel
-		// minimum dimension — equivalent to texconv's `-m 0`.
+		// minimum dimension, rebuilding every level from level 0. texconv's Run
+		// reaches the same behavior by flattening the source first, so both
+		// backends produce a chain of their own making.
 		args = append(args, "-mipsize", "1")
 	} else {
 		args = append(args, "-nomipmap")

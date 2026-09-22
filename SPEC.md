@@ -306,12 +306,15 @@ See `profiles.json` at the repo root for current defaults, and
   `ShouldGenerateMips` in `internal/compress/texconv.go`. With the default settings it
   is `profile.generateMips || sourceMipCount > 1`; the `stripMipsWhenDisabled` setting
   (below) changes what `generateMips:false` means:
-  - `true` — **always** generate a full chain. Use for world textures (diffuse,
+  - `true` — **always ask the backend for a chain**. Use for world textures (diffuse,
     normal, weapon, terrain, sky) — they are minified with distance and need mips
     even if a careless source shipped without them. Unaffected by `stripMipsWhenDisabled`.
-  - `false` — **preserve the source's own choice** (default): keep a full chain when
-    the source already had one, generate none when it did not. This is *not* a blanket
-    "strip mips" — a flare or scope reticle that ships with mips keeps them; flat UI art
+    The chain is rebuilt from the top level, never inherited, so a source shipping 7 of
+    11 levels comes out with 11. See "Mip chains are rebuilt", below.
+  - `false` — **let the source decide whether there is a chain at all** (default):
+    build one when the source had one, none when it did not. The levels are still
+    ATAK's own, not the source's. This is *not* a blanket
+    "strip mips" — a flare or scope reticle that ships with mips still gets a chain; flat UI art
     without mips stays single-level. When the global `stripMipsWhenDisabled` setting is
     on, `false` instead becomes an authoritative "strip": even a mipped source is
     flattened to a single level (smaller output, at the cost of source fidelity).
@@ -948,6 +951,35 @@ assets are filtered to the chosen mod before passing to the worker pool.
   original file afterwards, so the results screen never shows a temporary path
   and the saved-bytes total stays correct.
 
+- **Mip chains are rebuilt, not inherited.** The two backends disagreed about what
+  "generate mips" means. compressonator-bc7e's `-mipsize 1` derives every level from
+  level 0. texconv's `-m 0` generates only the levels a source lacks, so it passed an
+  existing chain through untouched — measured on an 8x8 two-level source whose level 1
+  was painted a different color, texconv returned that color and compressonator
+  returned a downsample of level 0 plus two levels the source never had. Asking texconv
+  for an exact count does not settle it either: it regenerates when the requested count
+  exceeds the source's and copies through when it matches.
+
+  So the same input produced different output depending on the configured backend, and
+  a source with a partial chain (7 of 11 levels, common in older mods) kept that chain
+  on texconv, leaving the engine nothing below 16x16 to sample.
+
+  `flattenTopLevel` in `internal/compress/texconv.go` removes the disagreement: before
+  the encode pass, `Run` writes an uncompressed single-level copy of the source and
+  encodes that instead, so the chain texconv builds is always its own. The copy carries
+  the resize when the plan calls for one, which means the encode pass needs no `-w`/`-h`
+  and the plan's dimensions are spent — its `Aligned` flag survives for
+  fallback attribution.
+
+  The cost is one extra texconv invocation, and `needsMipRebuild` confines it to the
+  files that can be affected: a source with a single level has nothing to discard, since
+  texconv already builds that chain from level 0. A failed flatten falls back to the
+  source unchanged, because a mip chain must never turn a file that would have
+  compressed into a failure. What this trades away is a mod author's hand-drawn lower
+  mip levels, which are now replaced by cubic downsamples. Coverage:
+  `internal/compress/mip_rebuild_test.go`, which asserts on decoded pixels rather than
+  on the header alone.
+
 - **Block alignment (BCn dimensions rounded to a multiple of 4).** Every BCn
   format encodes 4x4 pixel blocks, so a texture whose width or height is not a
   multiple of 4 has no exact block-compressed representation. `d3dx11_43.dll`
@@ -1049,8 +1081,10 @@ assets are filtered to the chosen mod before passing to the worker pool.
                     <input> <output.dds>
   ```
   Positional `output.dds` avoids texconv's extension-case rename dance
-  entirely. `-mipsize 1` produces a full mip chain to a 1-pixel minimum
-  (equivalent to texconv's `-m 0`); `-nomipmap` is the mipless branch. Mip
+  entirely. `-mipsize 1` produces a full mip chain to a 1-pixel minimum;
+  `-nomipmap` is the mipless branch. `-mipsize 1` rebuilds every level from level
+  0, which is the behavior both backends now have — texconv reaches it through the
+  flatten pass described under "Mip chains are rebuilt", below. Mip
   decision reuses `ShouldGenerateMips` — no per-backend re-implementation.
   Unsupported format strings fail loudly (bug in upstream code, not a
   silent default). Compressonator writes progress/diagnostics to stdout, not

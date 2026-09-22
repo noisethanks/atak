@@ -149,7 +149,9 @@ ATAK uses BCn block compression — a GPU-native format that decompresses in har
 
 **BC7 on Linux** is CPU-only — no GPU acceleration available. Expect 40-60 minutes for large jobs. For faster Linux compression, use BC3 for all profiles (the default). Quality difference is minimal at normal viewing distances.
 
-**Mip chains:** ATAK resolves mip generation per file. World-texture profiles (`generateMips: true`) always get a full chain built with cubic filtering, letting the engine load lower-resolution versions for distant objects and reducing effective VRAM further. Fixed-size art profiles (`generateMips: false`) follow the source instead — a texture that shipped with mips keeps them, one that didn't stays single-level. This matters for flares and scope reticles: many ship a mip chain and flattening them makes them alias and read as the wrong shade in-game. To force the old always-strip behavior for `generateMips: false`, enable `stripMipsWhenDisabled` in Settings. Keep your in-game texture quality setting at High — lowering it on top of BCn compression will reduce visual quality unnecessarily.
+**Mip chains:** ATAK resolves mip generation per file. World-texture profiles (`generateMips: true`) always ask the backend for a chain, built with cubic filtering, letting the engine load lower-resolution versions for distant objects and reducing effective VRAM further. Fixed-size art profiles (`generateMips: false`) follow the source instead — a texture that shipped with mips gets a chain, one that didn't stays single-level. This matters for flares and scope reticles: many ship a mip chain and flattening them makes them alias and read as the wrong shade in-game. To force the old always-strip behavior for `generateMips: false`, enable `stripMipsWhenDisabled` in Settings. Keep your in-game texture quality setting at High — lowering it on top of BCn compression will reduce visual quality unnecessarily.
+
+**A mip chain is always rebuilt, never inherited.** Whichever backend runs, every level is derived from level 0 of the output, so a source whose chain stops early comes out with a full one and a source with no chain gets the same result as a source that had one. texconv on its own would not do this: it generates only the levels a source lacks, so it used to pass an existing chain straight through while compressonator-bc7e rebuilt it. ATAK now strips the source to its top level first, which costs a second texconv call for the files that have a chain. The trade is deliberate. Output no longer depends on which backend you picked, and no file keeps a partial chain, but a mod author's hand-drawn lower mip levels are replaced by cubic downsamples.
 
 ---
 
@@ -182,7 +184,7 @@ Config lives at:
 - `modOutputMode` — non-destructive output mode. Default: true
 - `modOutputName` — output mod folder name. Default: "ATAK"
 - `modlistPath` — path to MO2 `modlist.txt`. Required when `modOutputMode` is true
-- `stripMipsWhenDisabled` — when true, profiles with `generateMips: false` strip mips entirely, dropping any chain the source shipped. When false (default), such a source keeps its chain (see `generateMips` below). Never affects `generateMips: true`. Toggle in Settings ("Strip Mips When Disabled")
+- `stripMipsWhenDisabled` — when true, profiles with `generateMips: false` strip mips entirely, dropping any chain the source shipped. When false (default), such a source gets a rebuilt chain (see `generateMips` below). Never affects `generateMips: true`. Toggle in Settings ("Strip Mips When Disabled")
 
 **Finding your modlist.txt:**
 - Usually at `<MO2 install>/profiles/<Profile Name>/modlist.txt`
@@ -216,7 +218,7 @@ Controls which textures get compressed and how. Created on first run from embedd
 **Per-profile fields:**
 - `name` — display name in scan results
 - `format` — compression format. See table above
-- `generateMips` — mip-chain **policy**, not an on/off switch. `true` forces a full chain — use for world textures (diffuse, normals, weapons, terrain, sky) that minify with distance. `false` **preserves the source's own choice**: a source that shipped mips (many flares, scope reticles) keeps its chain, one that didn't (most flat UI art) stays single-level. Set the `stripMipsWhenDisabled` config option to make `false` strip unconditionally instead
+- `generateMips` — mip-chain **policy**, not an on/off switch. `true` forces a full chain — use for world textures (diffuse, normals, weapons, terrain, sky) that minify with distance. `false` **lets the source decide whether there is a chain at all**: a source that shipped mips (many flares, scope reticles) gets a rebuilt chain, one that didn't (most flat UI art) stays single-level. The chain is always ATAK's, not the source's — see Mip chains above. Set the `stripMipsWhenDisabled` config option to make `false` strip unconditionally instead
 - `maxTextureSize` — cap output resolution. `0` = no limit. Set to `1024` on sky/terrain profiles for 4GB VRAM cards. Textures smaller than this value are never scaled up to it. Block alignment is separate and can still round a dimension up by as much as 3 pixels
 - `patterns` — glob patterns matched against filename or full path
 - `exclude` — optional. A file matching this profile's `patterns` **and** its `exclude` is declined by this profile, and matching continues with later profiles. Use it to route exceptions elsewhere — Normal Maps declines `*scope*bump*` so scope lens bumps fall through to Scope Textures (BC7) instead of being flattened to two-channel BC5. To drop a file outright, use the top-level `excludePatterns` instead

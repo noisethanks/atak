@@ -127,6 +127,9 @@ func resampleThenPrimary(ctx context.Context, primary, fallback Backend, job Job
 	inner.Asset.Path = tmpPath
 	inner.Asset.Width = plan.Width
 	inner.Asset.Height = plan.Height
+	// The intermediate really is single-mip, whatever the source carried. Saying so
+	// keeps a texconv primary from flattening a file that is already flat.
+	inner.Asset.SourceMipCount = 1
 	r := primary.Compress(ctx, inner)
 	if !r.Success {
 		return CompressionResult{}, false

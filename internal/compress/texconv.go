@@ -120,6 +120,43 @@ func (b *TexconvBackend) Resample(ctx context.Context, asset scan.Asset, width, 
 	return out, stderr, nil
 }
 
+// needsMipRebuild reports whether a source has to be flattened before it is
+// encoded. Only a source that already carries a chain needs it: texconv builds a
+// chain from level 0 for a single-level source on its own, so flattening one
+// would cost a second invocation for an identical result.
+func needsMipRebuild(generateMips bool, sourceMipCount int) bool {
+	return generateMips && sourceMipCount > 1
+}
+
+// flattenTopLevel writes an uncompressed, single-level copy of asset and returns
+// its path and the temporary directory holding it, which the caller removes.
+//
+// It is the first half of a mip rebuild. The copy is uncompressed so nothing is
+// encoded twice, and it carries the resize when the plan calls for one, so the
+// encode pass that follows works at the final size and needs no -w/-h of its own.
+// A zero plan passes no dimensions, which keeps the source size.
+func flattenTopLevel(ctx context.Context, texconvPath string, asset scan.Asset, plan resizePlan) (string, string, error) {
+	dir, err := os.MkdirTemp("", "atak-flatten-")
+	if err != nil {
+		return "", "", err
+	}
+	success, _, runErr, _ := runOnce(ctx, texconvPath, asset.Path, resampleFormat, false, plan.Width, plan.Height, dir)
+	if !success {
+		os.RemoveAll(dir)
+		if runErr == nil {
+			runErr = fmt.Errorf("flatten: texconv produced no output")
+		}
+		return "", "", runErr
+	}
+	base := filepath.Base(asset.Path)
+	out := filepath.Join(dir, strings.TrimSuffix(base, filepath.Ext(base))+".dds")
+	if _, err := os.Stat(out); err != nil {
+		os.RemoveAll(dir)
+		return "", "", err
+	}
+	return out, dir, nil
+}
+
 // Run invokes texconv on a single asset and returns the result.
 // If format is BC7_UNORM and texconv exits non-zero, automatically retries with BC3_UNORM.
 // outputDir should be filepath.Dir(asset.Path) for in-place compression.
@@ -137,15 +174,36 @@ func Run(ctx context.Context, texconvPath string, asset scan.Asset, format strin
 	// whether compressonator can take the job at all, so the two can't disagree.
 	plan := planResize(asset, format, maxTextureSize)
 
+	// A mip chain is rebuilt from the top level, never inherited. texconv only
+	// generates the levels a source lacks, so asking it for a chain leaves an
+	// existing one exactly as the source shipped it — including a partial chain
+	// that stops early, and including levels the source author drew by hand.
+	// flattenTopLevel strips the source to its top level first, so the chain
+	// texconv then builds is its own, all the way down to 1x1. This is what
+	// compressonator-bc7e does with -mipsize 1, so both backends now agree.
+	//
+	// The flattened copy carries the resize too, so the encode pass that follows
+	// needs no -w/-h and the plan is spent.
+	input := asset.Path
+	if needsMipRebuild(generateMips, asset.SourceMipCount) {
+		if flat, dir, err := flattenTopLevel(ctx, texconvPath, asset, plan); err == nil {
+			defer os.RemoveAll(dir)
+			input = flat
+			plan = resizePlan{Aligned: plan.Aligned}
+		}
+		// On failure the original source is used unchanged: a file that would have
+		// compressed must never become a failure over its mip chain.
+	}
+
 	actualFormat := format
-	success, stderr, runErr, after := runOnce(ctx, texconvPath, asset.Path, format, generateMips, plan.Width, plan.Height, outputDir)
+	success, stderr, runErr, after := runOnce(ctx, texconvPath, input, format, generateMips, plan.Width, plan.Height, outputDir)
 
 	// BC7 fallback — only if ctx is still live (not a cancellation failure).
 	if !success && format == "BC7_UNORM" && ctx.Err() == nil {
 		actualFormat = "BC3_UNORM"
 		// The plan is unchanged: BC3 uses the same 4x4 block as BC7, so the
 		// aligned target is still the right one.
-		success, stderr, runErr, after = runOnce(ctx, texconvPath, asset.Path, "BC3_UNORM", generateMips, plan.Width, plan.Height, outputDir)
+		success, stderr, runErr, after = runOnce(ctx, texconvPath, input, "BC3_UNORM", generateMips, plan.Width, plan.Height, outputDir)
 	}
 
 	if ctx.Err() != nil {
@@ -222,9 +280,13 @@ func ShouldGenerateMips(profileGenerateMips bool, sourceMipCount int, stripWhenD
 // can be asserted without executing texconv — generateMips was previously accepted by
 // Run and never reached this slice, which silently gave every profile a full mip chain.
 func texconvArgs(format string, generateMips bool, targetW, targetH int, outputDir, inputPath string) []string {
-	// -m 0 builds the full chain down to 1x1; -m 1 emits the top level only. The caller
+	// -m 0 asks for a full chain; -m 1 emits the top level only. texconv treats -m 0 as
+	// "at least what the source has", so it would pass an existing chain through
+	// untouched. Run strips the source to its top level first (see flattenTopLevel),
+	// which is why -m 0 here always means a chain texconv built itself. The caller
 	// resolves generateMips per file via ShouldGenerateMips, so a mipped source is never
-	// flattened and a mipless world texture still gets a chain forced by its profile.
+	// flattened to a single level and a mipless world texture still gets a chain forced
+	// by its profile.
 	mips := "0"
 	if !generateMips {
 		mips = "1"
