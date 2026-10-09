@@ -9,7 +9,7 @@ S.T.A.L.K.E.R. Anomaly and its modpacks represent a labor of love by hundreds of
 
 Works with GAMMA, EFP, and any Anomaly-based modpack.
 
-As of 0.3.0, atak now ships with a second backend option, our fork of AMD compressonator with Richard Gelreich's excellent BC7 encoder. This backend boasts slightly higher quality output than texconv and 20x-200x faster. It's CPU only with SIMD acceleration. It's the default, and we highly recommend it. For GPU accelerated compression on Windows only, switch to texconv.
+As of 0.3.0, atak now ships with a second backend option, our fork of AMD compressonator with Richard Geldreich's excellent BC7 encoder. This backend boasts slightly higher quality output than texconv and 20x-200x faster. It's CPU only with SIMD acceleration. It's the default, and we highly recommend it. For GPU accelerated compression on Windows only, switch to texconv.
 - https://github.com/richgel999/bc7enc_rdo
 - https://github.com/noisethanks/compressonator
 
@@ -73,7 +73,7 @@ Disable Mod Output Mode in Settings. Then follow the backup-first workflow below
 - ATAK was tested with G.A.M.M.A but should support most mods and mod packs. Feel free to report any bugs in the issue tracker.
 - Texconv does not support GPU acceleration on Linux, and will likely take several hours to complete. I highly recommend using compressonator_bc7e instead.
 - compressonator_bc7e is SIMD enabled and will very aggressively utilize your CPU cores. We highly reccomend killing background processes and setting your worker threads to 1-2.
-- BC7 is not incompatible with the xray-monolith engine, but any block-compressed texture whose width or height is not a multiple of 4 is expensive to load. `d3dx11_43.dll` rounds those dimensions up, which forces a decode, resize and re-encode through Microsoft's 2010 reference encoder on first bind. For BC7 that costs seconds to minutes per texture and shows up as the game freezing when a UI window opens. UI art is authored at arbitrary sizes, so this lands on `textures/ui/` most often. ATAK now resizes those textures to a multiple of 4 during compression, which is the same resize the engine would do at load time, so BC7 is safe for UI profiles again.
+- BC7 is compatible with the xray-monolith engine, but any block-compressed texture whose width or height is not a multiple of 4 is expensive to load. `d3dx11_43.dll` rounds those dimensions up, which forces a decode, resize and re-encode through Microsoft's 2010 reference encoder on first bind. For BC7 that costs seconds to minutes per texture and shows up as the game freezing when a UI window opens. UI art is authored at arbitrary sizes, so this lands on `textures/ui/` most often. ATAK now resizes those textures to a multiple of 4 during compression, which is the same resize the engine would do at load time, so BC7 is safe for UI profiles again.
 
 ### Backups
 
@@ -87,7 +87,7 @@ Disable Mod Output Mode in Settings. Then follow the backup-first workflow below
 - We recommend against downscaling AND using BC7. Replace 'BC7_UNORM' with 'BC3_UNORM'. It may introduce severe artifacting, but tinkering is encouraged.
 - MIP chains clamp your VRAM usage to the Texture MIP bias setting.
 
-### DirextX 9
+### DirectX 9
 - DirectX 9 does not support BC7. If you use DirectX 9, be sure to set every BC7_UNORM profile to BC3_UNORM.
 
 - Keep reading for more details and advanced functionality.
@@ -147,8 +147,6 @@ ATAK uses BCn block compression — a GPU-native format that decompresses in har
 
 **BC5 is required for normal maps** — using BC3 on normal maps produces incorrect lighting. Do not change the Normal Maps profile format.
 
-**BC7 on Linux** is CPU-only — no GPU acceleration available. Expect 40-60 minutes for large jobs. For faster Linux compression, use BC3 for all profiles (the default). Quality difference is minimal at normal viewing distances.
-
 **Mip chains:** ATAK resolves mip generation per file. World-texture profiles (`generateMips: true`) always get a full chain built with cubic filtering, letting the engine load lower-resolution versions for distant objects and reducing effective VRAM further. Fixed-size art profiles (`generateMips: false`) follow the source instead — a texture that shipped with mips keeps them, one that didn't stays single-level. This matters for flares and scope reticles: many ship a mip chain and flattening them makes them alias and read as the wrong shade in-game. To force the old always-strip behavior for `generateMips: false`, enable `stripMipsWhenDisabled` in Settings. Keep your in-game texture quality setting at High — lowering it on top of BCn compression will reduce visual quality unnecessarily.
 
 ---
@@ -176,7 +174,7 @@ Config lives at:
 }
 ```
 
-- `workerCount` — concurrent texconv processes (compression only). Each worker pegs one CPU core. Default: 1
+- `workerCount` — concurrent texconv/compressonator processes. Each worker pegs one CPU core. Default: 1
 - `backupLevel` — 7-Zip compression level 1-9. Default: 1
 - `scanExclusions` — directories to skip during scan. A plain name (`downloads`, `.*`) matches a directory or mod name anywhere; a path pattern (`*/textures/ui/SquareDOV`) matches a nested directory, using the same pattern syntax as the profile lists above. The matched directory and everything under it is skipped
 - `modOutputMode` — non-destructive output mode. Default: true
@@ -229,10 +227,6 @@ Controls which textures get compressed and how. Created on first run from embedd
 - Matching is case-insensitive on all platforms
 - **Order matters — first match wins.** Put specific patterns before general ones
 
-Community profiles available in the `profiles/` directory in the repository:
-- `default.json` — conservative BC3 defaults (same as embedded)
-- `quality.json` — BC7 for weapons and characters (Windows GPU recommended)
-
 ---
 
 
@@ -241,8 +235,6 @@ Community profiles available in the `profiles/` directory in the repository:
 Default profiles use BC3 for all textures except Normal Maps (BC5) and Scope Textures (BC7). BC3 produces minimal visible quality loss at typical Anomaly viewing distances and compresses quickly on all platforms.
 
 Scope Textures is the one BC7 profile in the defaults. Scope lens textures often pack reflection, gloss, and specular data across all four RGBA channels, so BC5 would discard blue and alpha and BC3 would band the gradients. It covers a small number of files, so the CPU cost on Linux stays bounded — see [Compression formats](#compression-formats) for the BC7 caveat.
-
-For higher quality weapon and character textures, copy `profiles/quality.json` from the repository to your config directory — this uses BC7 for weapons and characters. Recommended for Windows users with GPU acceleration.
 
 For 4GB VRAM cards, set `"maxTextureSize": 1024` on Sky and Terrain profiles in `profiles.json` to reduce VRAM usage further beyond BCn compression.
 
@@ -262,7 +254,7 @@ go build -o atak-linux .
 Release build:
 ```bash
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-  -ldflags="-s -w -X main.version=v0.2.0" \
+  -ldflags="-s -w -X main.version=v0.3.6" \
   -o atak-linux .
 ```
 
