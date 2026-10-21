@@ -293,10 +293,8 @@ screen.
 
 ---
 
-## Support
+## Support Development
 
-If ATAK saved your playthrough, consider supporting development:
+Your support helps me dedicate more time to R&D.
 
-**[noisethanks.com/support](https://noisethanks.com/support)**
-
-Made by [mrchocolate](https://github.com/noisethanks)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/noisethanks) [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/O7J021W17A)
