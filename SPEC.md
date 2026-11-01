@@ -1058,6 +1058,24 @@ assets are filtered to the chosen mod before passing to the worker pool.
   `CompressionResult.Backend` is blanked (`""`) in this case because neither
   backend produced output — misattributing to either would be misleading.
 
+- **Non-ASCII path staging (both backends and the fallback).** When a job's
+  source path or output directory contains any non-ASCII byte, `dispatch()`
+  copies the source to a plain-ASCII temp name (`src` + original extension,
+  case preserved) under a per-file temp dir, runs the whole routing (primary,
+  resample step, texconv fallbacks) against ASCII temp input/output paths, then
+  moves the result to the real destination from Go. Input and output are
+  checked together but staged separately, so in-place mode (destination inside
+  the non-ASCII mod folder) works. The temp dir is removed on success, failure
+  and cancellation, and the real destination is touched only after the backend
+  reports success. Pure-ASCII jobs take the old path with no copy.
+  **Why — do not remove as unnecessary:** the Linux texconv port converts argv
+  without `setlocale`, so a non-ASCII path arrives mangled; texconv then fails
+  (`This format requires WIC` / an uncaught `std::filesystem` error) even though
+  the file is fine. Compressonator-bc7e also failed on non-ASCII paths in the
+  corpus run (exit 255, no `Could not load source file` text, so the reader-gap
+  fallback never fired). Code: `internal/compress/asciistage.go`; tests:
+  `asciistage_test.go`.
+
 - **argv-dump-on-failure diagnostics.** When compressonator exits non-zero,
   `Compress` prepends `argv: <bin> <args...>` to the diag string carried in
   `CompressionResult.Stderr`. Keeps failure records self-contained — no need
