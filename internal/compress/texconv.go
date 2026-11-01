@@ -125,7 +125,9 @@ func (b *TexconvBackend) Resample(ctx context.Context, asset scan.Asset, width, 
 
 // Run invokes texconv on a single asset and returns the result.
 // If format is BC7_UNORM and texconv exits non-zero, automatically retries with BC3_UNORM.
-// outputDir should be filepath.Dir(asset.Path) for in-place compression.
+// outputDir must not be the source directory: texconv writes <stem>.dds there (always a
+// lowercase extension), which would overwrite the source. dispatch passes a staging dir and
+// names the final file itself.
 func Run(ctx context.Context, texconvPath string, asset scan.Asset, format string, generateMips bool, maxTextureSize int, outputDir string) CompressionResult {
 	before, _ := fileSize(asset.Path)
 
@@ -151,9 +153,9 @@ func Run(ctx context.Context, texconvPath string, asset scan.Asset, format strin
 		success, stderr, runErr, after = runOnce(ctx, texconvPath, asset.Path, "BC3_UNORM", generateMips, plan.Width, plan.Height, outputDir)
 	}
 
+	// No cleanup of outPath here: dispatch stages every job, so a partial file can
+	// only be in the staging dir, which is discarded wholesale.
 	if ctx.Err() != nil {
-		outPath := filepath.Join(outputDir, filepath.Base(asset.Path))
-		os.Remove(outPath)
 		return CompressionResult{Asset: asset, Success: false, Err: ctx.Err()}
 	}
 	if !success {
@@ -164,17 +166,6 @@ func Run(ctx context.Context, texconvPath string, asset scan.Asset, format strin
 			Err:          runErr,
 			Stderr:       stderr,
 			Before:       before,
-		}
-	}
-	// texconv always lowercases output extension; on Linux case-sensitive fs this
-	// creates a new file, leaving the original untouched. Rename to match original.
-	// Only applies in-place — in mod output mode outputDir differs from the source
-	// directory, so renaming to asset.Path would overwrite the source file.
-	if filepath.Dir(asset.Path) == outputDir {
-		ext := filepath.Ext(asset.Path)
-		texconvOut := filepath.Join(outputDir, strings.TrimSuffix(filepath.Base(asset.Path), ext)+".dds")
-		if texconvOut != asset.Path {
-			os.Rename(texconvOut, asset.Path)
 		}
 	}
 	// A changed format is the more important thing to report, so it wins when both

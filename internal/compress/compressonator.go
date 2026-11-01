@@ -49,6 +49,11 @@ func (b *CompressonatorBackend) Compress(ctx context.Context, job Job) Compressi
 	if !strings.EqualFold(ext, ".dds") {
 		outPath = strings.TrimSuffix(outPath, ext) + ".dds"
 	}
+	// The output is deleted below and on cancel. If it is the source, that would
+	// destroy the only copy; dispatch stages in-place jobs so this never fires there.
+	if outPath == asset.Path {
+		return CompressionResult{Asset: asset, Backend: b.Name(), Success: false, Err: fmt.Errorf("compressonator: refusing to write over source %s", asset.Path), Before: before}
+	}
 	// Remove any pre-existing output — Compressonator has no overwrite flag and
 	// the CLI's behavior on an existing destination isn't documented; deleting
 	// first makes it deterministic.

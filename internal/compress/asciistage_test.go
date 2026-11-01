@@ -90,13 +90,26 @@ func TestDispatchNonASCIIPaths(t *testing.T) {
 		}
 	})
 
-	t.Run("ASCII paths untouched", func(t *testing.T) {
+	t.Run("ASCII mod output stages on the destination filesystem", func(t *testing.T) {
 		src := filepath.Join(plain, "c.dds")
 		os.WriteFile(src, []byte("source"), 0644)
+		modOut := filepath.Join(root, "modout")
 		b := &recordingBackend{}
-		dispatch(context.Background(), b, nil, Job{Asset: scan.Asset{Path: src}, Format: "BC1_UNORM", OutputDir: plain})
-		if b.gotSrc != src || b.gotOut != plain {
-			t.Errorf("ASCII job was staged: %q %q", b.gotSrc, b.gotOut)
+		r := dispatch(context.Background(), b, nil, Job{Asset: scan.Asset{Path: src}, Format: "BC1_UNORM", OutputDir: modOut})
+		if !r.Success {
+			t.Fatalf("failed: %v", r.Err)
+		}
+		if b.gotSrc != src {
+			t.Errorf("ASCII source was copied: %q", b.gotSrc)
+		}
+		if !strings.HasPrefix(b.gotOut, filepath.Join(modOut, stagingDirName)+string(filepath.Separator)) {
+			t.Errorf("output not staged under the mod folder: %q", b.gotOut)
+		}
+		if got, _ := os.ReadFile(filepath.Join(modOut, "c.dds")); string(got) != "compressed" {
+			t.Errorf("output missing, got %q", got)
+		}
+		if _, err := os.Stat(filepath.Join(modOut, stagingDirName)); !os.IsNotExist(err) {
+			t.Errorf("staging dir left behind: %v", err)
 		}
 	})
 }

@@ -3,7 +3,6 @@ package compress
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/noisethanks/atak/internal/scan"
@@ -57,10 +56,10 @@ const compressonatorLoadErrPattern = "Could not load source file"
 // automatic, transparent, and recorded in CompressionResult so summary UI
 // can attribute mismatches correctly.
 //
-// Every backend call, including the texconv fallbacks, runs on ASCII-only paths:
-// see withASCIIPaths.
+// Every backend call, including the texconv fallbacks, runs against staged temp
+// paths when the job is in place or has non-ASCII paths: see withStaging.
 func dispatch(ctx context.Context, primary, fallback Backend, job Job) CompressionResult {
-	return withASCIIPaths(job, func(j Job) CompressionResult {
+	return withStaging(job, func(j Job) CompressionResult {
 		return route(ctx, primary, fallback, j)
 	})
 }
@@ -148,7 +147,6 @@ func resampleThenPrimary(ctx context.Context, primary, fallback Backend, job Job
 	if !r.Success {
 		return CompressionResult{}, false
 	}
-	restoreOutputName(job, inner)
 
 	// Report the original file, not the temporary one: the asset the user
 	// recognizes, and a Before size that makes the saved-bytes total correct.
@@ -159,36 +157,6 @@ func resampleThenPrimary(ctx context.Context, primary, fallback Backend, job Job
 		r.FallbackReason = plan.reason()
 	}
 	return r, true
-}
-
-// restoreOutputName puts the source's own extension case back on the file the
-// split path just wrote.
-//
-// texconv always writes a lowercase .dds extension, so the intermediate for a
-// Foo.DDS source is named foo.dds, and the encoder names its output after the
-// file it read. The plain path never has this problem, because there the encoder
-// reads Foo.DDS itself and keeps the spelling.
-//
-// The mismatch is not cosmetic. In place, the compressed foo.dds lands beside an
-// untouched Foo.DDS and the source is never replaced. In mod-output mode, the job
-// records the output as Foo.DDS while the file on disk is foo.dds, so the
-// incremental skip in worker.go never finds it and the file is re-encoded on
-// every run.
-func restoreOutputName(job, inner Job) {
-	want := filepath.Base(job.Asset.Path)
-	got := filepath.Base(inner.Asset.Path)
-	if want == got {
-		return
-	}
-	from := filepath.Join(job.OutputDir, got)
-	to := filepath.Join(job.OutputDir, want)
-	if from == to {
-		return
-	}
-	if _, err := os.Stat(from); err != nil {
-		return // the encoder named it something else; leave it alone
-	}
-	_ = os.Rename(from, to)
 }
 
 // prepassPlan reports what texconv has to do to a source before the primary

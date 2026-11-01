@@ -49,7 +49,7 @@ func RunPool(ctx context.Context, primary, fallback Backend, jobs []Job, workerC
 				default:
 				}
 				if job.ModOutputDir != "" && job.RelPath != "" {
-					outPath := filepath.Join(job.ModOutputDir, job.RelPath)
+					outPath := destPath(job)
 					if _, err := os.Stat(outPath); err == nil {
 						// Already compressed on a previous run — skip incrementally.
 						results <- CompressionResult{Asset: job.Asset, Success: true, OutputSkipped: true}

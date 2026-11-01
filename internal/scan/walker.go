@@ -71,6 +71,10 @@ func Walk(modsDir string, profiles []config.Profile, excludePatterns []string, e
 				return nil // skip unreadable entries, keep walking
 			}
 			if d.IsDir() {
+				if d.Name() == StagingDirName {
+					os.RemoveAll(path) // stale: left by a crashed run
+					return filepath.SkipDir
+				}
 				rel, _ := filepath.Rel(modsDir, path)
 				if excludesDir(d.Name(), modRelPath(rel), exclusions) {
 					return filepath.SkipDir
@@ -122,6 +126,12 @@ func WalkVirtual(virtualFS map[string]string, modsDir string, profiles []config.
 
 		for relPath, absPath := range virtualFS {
 			relSlash := filepath.ToSlash(relPath)
+			if inStagingDir(relSlash) {
+				if dir, ok := stagingRoot(relSlash, absPath); ok {
+					os.RemoveAll(dir) // stale: left by a crashed run
+				}
+				continue
+			}
 			if underExcludedDir(relSlash, exclusions) {
 				continue // inside a directory the scan excludes — pruned in Walk, skipped here
 			}
@@ -158,6 +168,39 @@ func WalkVirtual(virtualFS map[string]string, modsDir string, profiles []config.
 	}()
 
 	return assets, statsCh, errs
+}
+
+// StagingDirName is the hidden directory compress jobs stage output in. It only
+// exists during a run, so any copy the scan meets is stale from a crash. Both
+// walkers skip it and delete it whatever scanExclusions says, alongside the other
+// hardcoded rules (IsVariantPath).
+const StagingDirName = ".atak-staging"
+
+// inStagingDir reports whether a slash path has a StagingDirName segment.
+func inStagingDir(p string) bool {
+	return strings.Contains("/"+filepath.ToSlash(p)+"/", "/"+StagingDirName+"/")
+}
+
+// stagingRoot returns the on-disk staging directory a virtual-FS file sits in.
+// The directory is derived from the mod-root-relative path alone: relSlash is cut
+// at its first StagingDirName segment, and that suffix must match the end of
+// absPath. The part of absPath before the suffix (modsDir, the mod folder) is
+// never inspected, so a staging-named folder above the mod can't be returned, and
+// a mismatch returns false rather than guessing. RemoveAll on the result can only
+// reach a directory inside a mod.
+func stagingRoot(relSlash, absPath string) (string, bool) {
+	rel := "/" + relSlash
+	i := strings.Index(rel, "/"+StagingDirName+"/")
+	if i < 0 {
+		return "", false
+	}
+	suffix := rel[i:] // "/.atak-staging/job-x/out/f.dds"
+	abs := filepath.ToSlash(absPath)
+	if !strings.HasSuffix(abs, suffix) {
+		return "", false
+	}
+	root := abs[:len(abs)-len(suffix)+1+len(StagingDirName)]
+	return filepath.FromSlash(root), true
 }
 
 // IsVariantPath reports whether a mod-root-relative path sits in a variant folder

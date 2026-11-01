@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/noisethanks/atak/internal/scan"
@@ -244,6 +245,13 @@ func (s *stubBackend) Compress(ctx context.Context, job Job) CompressionResult {
 	s.gotPath = job.Asset.Path
 	if s.compressErr {
 		return CompressionResult{Asset: job.Asset, Backend: s.name, Success: false, Err: errors.New("stub failure")}
+	}
+	// A real backend leaves its output in OutputDir, and dispatch's staging
+	// requires exactly one file there before it moves it to the destination.
+	base := filepath.Base(job.Asset.Path)
+	out := filepath.Join(job.OutputDir, strings.TrimSuffix(base, filepath.Ext(base))+".dds")
+	if err := os.WriteFile(out, []byte("stub output"), 0644); err != nil {
+		return CompressionResult{Asset: job.Asset, Backend: s.name, Err: err}
 	}
 	return CompressionResult{Asset: job.Asset, Backend: s.name, Success: true, After: 64}
 }

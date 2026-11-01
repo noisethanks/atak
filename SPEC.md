@@ -896,6 +896,9 @@ Surfaced in the Settings screen as an editable list — users can add or remove 
 **Hardcoded exclusions (never user-configurable):**
 - Files where `DDSInfo.Compressed == true` — never re-compress already compressed textures
 - Files without `.dds` extension — only DDS files are processed
+- Any `.atak-staging` directory (`scan.StagingDirName`) — compress jobs stage output
+  there, so one present at scan time is stale from a crash. Both walkers skip it
+  whatever `scanExclusions` holds (even `[]`) and delete it
 
 **Configurable exclusions (in profiles.json):**
 - `minFileSizeBytes` — top-level field in profiles.json, default 1024. Files smaller
@@ -1062,16 +1065,25 @@ assets are filtered to the chosen mod before passing to the worker pool.
   `CompressionResult.Backend` is blanked (`""`) in this case because neither
   backend produced output — misattributing to either would be misleading.
 
-- **Non-ASCII path staging (both backends and the fallback).** When a job's
-  source path or output directory contains any non-ASCII byte, `dispatch()`
-  copies the source to a plain-ASCII temp name (`src` + original extension,
-  case preserved) under a per-file temp dir, runs the whole routing (primary,
-  resample step, texconv fallbacks) against ASCII temp input/output paths, then
-  moves the result to the real destination from Go. Input and output are
-  checked together but staged separately, so in-place mode (destination inside
-  the non-ASCII mod folder) works. The temp dir is removed on success, failure
-  and cancellation, and the real destination is touched only after the backend
-  reports success. Pure-ASCII jobs take the old path with no copy.
+- **Job staging (both backends and the fallback).** `dispatch()` runs every job
+  through `withStaging`, so final destinations are only ever written by a
+  completed rename (see Cancellation). Each job gets a private directory under
+  `.atak-staging`, placed on the destination's filesystem: under the mod output
+  folder in Mod Output Mode, beside the source in place. The move onto the
+  destination is then a same-filesystem rename. The final filename is always the
+  source's exact name (`destPath`, `asciistage.go`): `RelPath` in Mod Output Mode,
+  the source path in place. Whatever name the backend gave its single staged
+  output (texconv always writes a lowercase `.dds`) is ignored, so the worker's
+  incremental skip finds the file on the next run. The scanner always skips and
+  deletes it (see hardcoded exclusions), independent of `scanExclusions`. The job directory is removed when the job ends, success, failure
+  or cancel; the shared `.atak-staging` parent is removed with the last job in
+  it. If the staging path has a non-ASCII byte, staging uses the OS temp dir
+  instead and `moveFile` copies to a `<name>.atak-tmp` sibling and renames, so the
+  replace stays atomic. A non-ASCII source is also copied to a plain-ASCII temp
+  name (`src` + original extension, case preserved), and the whole routing
+  (primary, resample step, texconv fallbacks) runs against ASCII temp
+  input/output paths. Input and output are staged separately so in-place mode
+  works. The real destination is touched only after the backend reports success.
   **Why — do not remove as unnecessary:** the Linux texconv port converts argv
   without `setlocale`, so a non-ASCII path arrives mangled; texconv then fails
   (`This format requires WIC` / an uncaught `std::filesystem` error) even though
@@ -1189,7 +1201,16 @@ All long-running operations (backup, restore, compress) must support Ctrl+C canc
 - Subprocess kill on cancellation — set `Setpgid: true` on start, then kill the
   entire process group on cancel so any children 7zz or texconv may have spawned
   are also killed. `cmd.Wait()` after kill returns an error — swallow it as expected
-- Partial output files are deleted on cancel
+- **Invariant: a final destination is only ever written by a completed rename.**
+  Every compress job, in place or in Mod Output Mode, runs against a private
+  staging directory (`withStaging`, `internal/compress/asciistage.go`); no
+  backend is ever handed a final path. The source is read-only for the whole
+  job. Only after the backend reports success is the result moved onto the
+  destination — in place under the source's exact name (extension case included,
+  e.g. `.DDS`). A cancelled or failed job therefore leaves its source
+  byte-identical and no partial file at the destination, in any case variant;
+  cancel cleanup deletes only staging files. Backends do no destination cleanup
+  of their own.
 - After cancellation, the app returns to the main menu with message: "Operation cancelled"
 - Ctrl+C on the main menu or any non-operational screen exits the app normally
 - Implemented purely through Bubble Tea key messages — do NOT use `os/signal`
@@ -1601,8 +1622,10 @@ These must be followed in every file or platform support silently breaks:
   must be gated behind a build tag or `runtime.GOOS` check.
 - All subprocess invocations via `exec.Command` use the extracted binary path
   from `EmbeddedTools` — never a hardcoded binary name.
-- **Extension case:** Never assume `.dds` — always preserve the original file's
-  extension case when writing output. Use `os.Rename` to match original case.
+- **Extension case:** Never assume `.dds` — output filenames always match the
+  source's exact name, case included (`Foo.DDS` stays `Foo.DDS`). The name comes
+  from the job (`destPath`: `RelPath` in Mod Output Mode, the source path in
+  place), never from the file a backend wrote in staging.
 - **macOS:** `os.UserConfigDir()` returns `~/Library/Application Support` —
   no special handling needed, already correct via the stdlib.
 - **macOS process management:** Same as Linux — `syscall.SysProcAttr{Setpgid: true}`
