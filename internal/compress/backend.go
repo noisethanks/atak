@@ -71,6 +71,35 @@ func route(ctx context.Context, primary, fallback Backend, job Job) CompressionR
 		if r, ok := resampleThenPrimary(ctx, primary, fallback, job, plan); ok {
 			return r
 		}
+		// Two ways to land here. The split was tried and did not work, or the file
+		// needs a channel-order conversion and has no usable dimensions to resample
+		// to. Either way the fallback takes the whole job, which is the safe answer
+		// for a 24-bit source: texconv reads it correctly and needs no size.
+		r := fallback.Compress(ctx, job)
+		// Never overwrite a reason the fallback already attributed: a BC7 encoder
+		// rejection that changed the format matters more than why the file was
+		// resized.
+		if r.Success && r.FallbackReason == "" && primary.Name() == "compressonator-bc7e" {
+			r.FallbackReason = plan.reason()
+		}
+		return r
+	}
+	r := primary.Compress(ctx, job)
+	if r.Success || fallback == nil || ctx.Err() != nil {
+		return r
+	}
+	if primary.Name() != "compressonator-bc7e" || !strings.Contains(r.Stderr, compressonatorLoadErrPattern) {
+		return r
+	}
+	r2 := fallback.Compress(ctx, job)
+	if r2.Success {
+		r2.FallbackReason = FallbackReaderGap
+		return r2
+	}
+	r2.Stderr = "compressonator-bc7e:\n" + r.Stderr + "\n---\ntexconv:\n" + r2.Stderr
+	r2.Backend = ""
+	return r2
+}
 
 // Resampler is a backend that can resize a texture to an exact size without also
 // being the one to encode it. Only texconv implements it today. dispatch uses it
