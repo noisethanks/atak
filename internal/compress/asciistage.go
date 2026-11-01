@@ -20,9 +20,10 @@ func isASCII(s string) bool {
 }
 
 // isInPlace reports whether a job writes its output beside the source, so the
-// output name can collide with the source file itself.
+// output name can collide with the source file itself. Mod Output Mode is never
+// in place, whatever OutputDir holds.
 func isInPlace(job Job) bool {
-	return filepath.Dir(job.Asset.Path) == job.OutputDir
+	return job.ModOutputDir == "" && filepath.Dir(job.Asset.Path) == job.OutputDir
 }
 
 // stagingDirName is the hidden directory jobs stage output in, so the final move
@@ -78,14 +79,21 @@ func cleanupStaging(jobDir, parent string) {
 // whatever the backend wrote: the source's own path in place, RelPath in Mod
 // Output Mode. Case is preserved exactly, so Foo.DDS stays Foo.DDS. It is also
 // the path worker.go probes to skip a file already compressed.
-func destPath(job Job) string {
+//
+// A job with ModOutputDir set is in Mod Output Mode and needs RelPath too.
+// Without it there is no right answer, and guessing one (the source's own
+// directory) made every file look already compressed, so it is an error.
+func destPath(job Job) (string, error) {
 	switch {
+	case job.ModOutputDir != "":
+		if job.RelPath == "" {
+			return "", fmt.Errorf("mod output mode: %s has no relative path", job.Asset.Path)
+		}
+		return filepath.Join(job.ModOutputDir, job.RelPath), nil
 	case isInPlace(job):
-		return job.Asset.Path
-	case job.ModOutputDir != "" && job.RelPath != "":
-		return filepath.Join(job.ModOutputDir, job.RelPath)
+		return job.Asset.Path, nil
 	}
-	return filepath.Join(job.OutputDir, filepath.Base(job.Asset.Path))
+	return filepath.Join(job.OutputDir, filepath.Base(job.Asset.Path)), nil
 }
 
 // withStaging runs run on a job whose output goes to a private staging
@@ -147,9 +155,11 @@ func withStaging(job Job, run func(Job) CompressionResult) CompressionResult {
 		return r
 	}
 	produced := filepath.Join(outDir, entries[0].Name())
-	dest := destPath(job)
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err == nil {
-		err = moveFile(produced, dest)
+	dest, err := destPath(job)
+	if err == nil {
+		if err = os.MkdirAll(filepath.Dir(dest), 0755); err == nil {
+			err = moveFile(produced, dest)
+		}
 	}
 	if err != nil {
 		r.Success = false

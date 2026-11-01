@@ -254,11 +254,16 @@ func buildJobs(data CompressJobData) []compress.Job {
 				Format:         g.Format,
 				GenerateMips:   genMips,
 				MaxTextureSize: g.MaxTextureSize,
-				OutputDir:      filepath.Dir(path),
 			}
-			if data.ModOutputDir != "" && i < len(g.RelPaths) && g.RelPaths[i] != "" {
-				job.RelPath = g.RelPaths[i]
+			if data.ModOutputDir != "" {
+				// Mod Output Mode: always set, even when this file has no RelPath, so
+				// the worker fails it loudly instead of writing it in place.
 				job.ModOutputDir = data.ModOutputDir
+				if i < len(g.RelPaths) {
+					job.RelPath = g.RelPaths[i]
+				}
+			} else {
+				job.OutputDir = filepath.Dir(path)
 			}
 			jobs = append(jobs, job)
 		}
