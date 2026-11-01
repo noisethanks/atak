@@ -117,16 +117,16 @@ Default profiles cover the most common texture categories:
 |---|---|---|
 | Bump maps | BC7 | `_bump`, `_bump#`, `*nbump*`, `_normalbump` suffixes |
 | Normal maps | BC5 | `_normal`, `_nm`, `_nrm`, `_norm` suffixes |
-| Sights / Reticles | BC3 | `scope_reticles/`, `bonus_sights/`, `*crosshair*` |
+| Sights / Reticles | BC7 | `scope_reticles/`, `bonus_sights/`, `*crosshair*` |
 | Scope textures | BC7 | `*scope*diff*`, `*scope*bump*`, `*lens_bump*`, `*/textures/wpn/scope_*` |
-| UI / Icons | BC3 | `textures/ui/` path |
+| UI / Icons | BC7 | `textures/ui/` path |
 | Diffuse / color | BC7 | `_diff`, `_base`, `_col`, `_d` suffixes |
 | Weapon textures | BC7 | `textures/wpn/`, `textures/rwap/` paths |
 | Character / hands | BC7 | `textures/act/`, `textures/MK/` paths |
-| Sky textures | BC3 | `textures/sky/` path |
-| Terrain / detail | BC3 | `textures/terrain/`, `textures/detail/` paths |
-| Items | BC3 | `textures/items/`, `textures/item/`, `textures/usable_items/` paths |
-| Particle / FX | BC3 | `textures/semitone/` path |
+| Sky textures | BC7 | `textures/sky/` path |
+| Terrain / detail | BC7 | `textures/terrain/`, `textures/detail/` paths |
+| Items | BC7 | `textures/items/`, `textures/item/`, `textures/usable_items/` paths |
+| Particle / FX | BC7 | `textures/semitone/` path |
 
 Already-compressed textures (~24,000 in a typical G.A.M.M.A install) are detected and skipped automatically.
 
@@ -149,7 +149,7 @@ ATAK uses BCn block compression — a GPU-native format that decompresses in har
 
 **BC5 is for two-channel normal maps only** — it is the best format for a texture that stores nothing but X and Y, and the wrong format for anything else, because a sampled BC5 texture returns 0 for blue and 1 for alpha. It costs the same 1 byte per texel as BC7, so there is no size reason to reach for it. Never set it on a profile that can match `_bump`.
 
-**BC7 on Linux** is CPU-only with texconv — no GPU acceleration available. Expect 40-60 minutes for large jobs. The compressonator-bc7e backend is CPU-only everywhere but 20x-200x faster, which is why it is the recommended one. For faster Linux compression with texconv, set the BC7 profiles to BC3 — that is a change from the shipped defaults, which use BC7 for bump maps, diffuse, scopes, weapons and characters. Quality difference is minimal at normal viewing distances.
+**BC7 on Linux** is CPU-only with texconv — no GPU acceleration available. texconv encodes BC7 on the CPU and is slower than BC3; expect 40-60 minutes for large jobs. The compressonator-bc7e backend is CPU-only everywhere but 20x-200x faster, so it is the recommended backend. If you must use texconv on Linux, set profiles to BC3 for faster compression — that is a change from the shipped defaults, which use BC7 for every category. Quality difference is minimal at normal viewing distances.
 
 **Mip chains:** ATAK resolves mip generation per file. World-texture profiles (`generateMips: true`) always get a full chain built with cubic filtering, letting the engine load lower-resolution versions for distant objects and reducing effective VRAM further. Fixed-size art profiles (`generateMips: false`) follow the source instead — a texture that shipped with mips keeps them, one that didn't stays single-level. This matters for flares and scope reticles: many ship a mip chain and flattening them makes them alias and read as the wrong shade in-game. To force the old always-strip behavior for `generateMips: false`, enable `stripMipsWhenDisabled` in Settings. Keep your in-game texture quality setting at High — lowering it on top of BCn compression will reduce visual quality unnecessarily.
 
@@ -236,9 +236,11 @@ Controls which textures get compressed and how. Created on first run from embedd
 
 ## Compression quality
 
-Default profiles use BC7 where the detail is visible up close — weapons, characters, diffuse color and bump maps — and BC3 for flat art, sky, terrain and items. BC5 is reserved for true two-channel normal maps. BC3 produces minimal visible quality loss at typical Anomaly viewing distances and compresses quickly on all platforms.
+Every default profile that formerly used BC3 now uses BC7. BC7 and BC3 both cost 1 byte per texel, so BC7 is free in VRAM, and it holds smooth alpha gradients and color detail better. BC5 stays reserved for true two-channel normal maps, and BC1/BC4 profiles are unchanged. Sizes that are not a multiple of 4 are rounded up to the next block at encode time, which avoids the slow runtime resampling that once made BC7 UI textures freeze the game.
 
 Scope lens textures pack reflection, gloss, and specular data across all four RGBA channels, so BC5 would discard blue and alpha and BC3 would band the gradients. They get their own profile so a scope stays one unit, rather than splitting across the bump and diffuse profiles. It covers a small number of files, so the CPU cost on Linux stays bounded — see [Compression formats](#compression-formats) for the BC7 caveat.
+
+**Existing installs keep their old defaults.** `profiles.json` is only written when it is missing, so updating ATAK does not change it. To pick up new defaults, delete your `profiles.json` and let ATAK recreate it (back up any custom edits first).
 
 For 4GB VRAM cards, set `"maxTextureSize": 1024` on Sky and Terrain profiles in `profiles.json` to reduce VRAM usage further beyond BCn compression.
 

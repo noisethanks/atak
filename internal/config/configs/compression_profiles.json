@@ -18,7 +18,7 @@
     "profiles": [
         {
             "name": "UI Readables",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": false,
             "patterns": [
                 "*/textures/ui/readables/*",
@@ -27,7 +27,7 @@
         },
         {
             "name": "Flares / FX",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": false,
             "patterns": [
                 "*/textures/anamflares/*",
@@ -36,7 +36,7 @@
         },
         {
             "name": "Particle / FX",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": false,
             "patterns": [
                 "*/textures/semitone/*"
@@ -76,7 +76,7 @@
         },
         {
             "name": "Custom UI",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": false,
             "patterns": [
                 "*/textures/catsy/*"
@@ -84,7 +84,7 @@
         },
         {
             "name": "UI / Icons",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": false,
             "patterns": [
                 "*/textures/ui/*",
@@ -115,7 +115,7 @@
         },
         {
             "name": "Specular / Gloss",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": true,
             "patterns": [
                 "*_spec.*",
@@ -124,7 +124,7 @@
         },
         {
             "name": "Masks / Alpha",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": true,
             "patterns": [
                 "*_mask.*",
@@ -133,7 +133,7 @@
         },
         {
             "name": "Sky Textures",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": true,
             "patterns": [
                 "*/textures/sky/*"
@@ -141,7 +141,7 @@
         },
         {
             "name": "Detail / Terrain",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": true,
             "patterns": [
                 "*/textures/detail/*",
@@ -150,7 +150,7 @@
         },
         {
             "name": "Sights / Reticles",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": false,
             "patterns": [
                 "*/textures/wpn/scope_reticles/*",
@@ -192,7 +192,7 @@
         },
         {
             "name": "Items",
-            "format": "BC3_UNORM",
+            "format": "BC7_UNORM",
             "generateMips": true,
             "patterns": [
                 "*/textures/items/*",

@@ -98,15 +98,15 @@ func TestDefaultProfilesRoutePerCategory(t *testing.T) {
 		wantName   string
 		wantFormat string
 	}{
-		{"gamedata/textures/wpn/scope_crosshair_hud.dds", "Sights / Reticles", "BC3_UNORM"},
+		{"gamedata/textures/wpn/scope_crosshair_hud.dds", "Sights / Reticles", "BC7_UNORM"},
 		// A suffix profile outranks a folder profile: *_d.* is Diffuse / Color even
 		// under textures/wpn, and only a weapon texture with no suffix of its own
 		// reaches Weapon Textures.
 		{"gamedata/textures/wpn/wpn_ak74_d.dds", "Diffuse / Color", "BC7_UNORM"},
 		{"gamedata/textures/wpn/wpn_ak74.dds", "Weapon Textures", "BC7_UNORM"},
-		{"gamedata/textures/ui/ui_icon_equipment.dds", "UI / Icons", "BC3_UNORM"},
-		{"gamedata/textures/ui/readables/pda_note.dds", "UI Readables", "BC3_UNORM"},
-		{"gamedata/textures/sky/cloudy3/00-00.dds", "Sky Textures", "BC3_UNORM"},
+		{"gamedata/textures/ui/ui_icon_equipment.dds", "UI / Icons", "BC7_UNORM"},
+		{"gamedata/textures/ui/readables/pda_note.dds", "UI Readables", "BC7_UNORM"},
+		{"gamedata/textures/sky/cloudy3/00-00.dds", "Sky Textures", "BC7_UNORM"},
 		{"gamedata/textures/act/act_hood.dds", "Character / Hands", "BC7_UNORM"},
 	}
 	for _, tc := range tests {

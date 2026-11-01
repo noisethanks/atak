@@ -401,7 +401,7 @@ since patterns are authored rather than observed.
 | Format | Quality | Size | Alpha | GPU accel Linux | Use for |
 |--------|---------|------|-------|-----------------|---------|
 | BC1 | Good | 0.5 bpt | No | Yes | Opaque diffuse |
-| BC3 | Good | 1 bpt | Yes | Yes | UI, general alpha |
+| BC3 | Good | 1 bpt | Yes | Yes | DirectX 9 / texconv speed fallback |
 | BC4 | Good | 0.5 bpt | No | Yes | Grayscale/masks |
 | BC5 | Excellent | 1 bpt | No | Yes | Two-channel normal maps only |
 | BC7 | Excellent | 1 bpt | Yes | No (CPU only) | High quality diffuse |
@@ -443,19 +443,23 @@ sidecar when in doubt, but expect to fall back to the suffix.
 **The embedded default** (`internal/config/configs/compression_profiles.json`,
 also at repo root as `profiles.json`) ships with broadly correct STALKER conventions:
 
-- **UI/Icons uses BC3** — BC7 was tried here and reverted. UI textures do use
-  smooth alpha gradients that BC7 handles better in principle, but the category
-  is large (~350 files in a GAMMA install) and BC7 is CPU-only on Linux, so it
-  dominated compression time for a difference that is not visible on flat icon
-  art with hard alpha edges. Users who want it can set BC7 in their own
-  `profiles.json`; there is no runtime cost either way, since BCn decompresses in
-  hardware at the same speed regardless of format.
+- **Every former BC3 category now uses BC7** — UI/Icons, UI Readables, Custom UI,
+  Flares/FX, Particle/FX, Specular/Gloss, Masks/Alpha, Sky, Detail/Terrain,
+  Sights/Reticles and Items. BC7 and BC3 both cost 1 byte per texel, so the
+  change has no VRAM cost, and BCn decompresses in hardware at the same speed
+  regardless of format. BC7 was once reverted for UI because of the slow
+  runtime resample of textures whose size is not a multiple of 4; the block
+  alignment change (`planResize`, see Block alignment) fixed that cause.
+- **Backend:** texconv on Linux encodes BC7 on the CPU and is slower than BC3, so
+  `compressonator-bc7e` is the recommended backend.
+- **Existing installs:** `profiles.json` is only written when missing. There is no
+  migration; users delete `profiles.json` to pick up new defaults.
 - **Scope Textures use BC7** — scope lens textures use all 4 RGBA channels for
   reflection and gloss data. The profile exists so every part of a scope, bump
   and diffuse alike, lands in one place rather than splitting across two.
 - **Weapon Textures, Character/Hands, and Diffuse/Color use BC7** — high visual
   impact textures where quality matters. BC7 is GPU-accelerated on Windows and
-  stays manageable on Linux because these categories are smaller than UI.
+  stays manageable on Linux with the compressonator-bc7e backend.
 - The BC7 → BC3 automatic fallback in `texconv.go` remains as a safety net for
   any profile that uses BC7.
 
