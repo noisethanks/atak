@@ -1,5 +1,5 @@
 {
-    "_note": "Profile order matters — first match wins. Specific path patterns (ui/readables, flares) must precede general ones (ui/*, fx_*). BC7_UNORM for weapons, characters, and diffuse. BC7 is CPU-intensive on Linux (no GPU acceleration); expect 3-5x slower compression than default. Will use GPU accceleration on Windows.",
+    "_note": "Profile order matters — first match wins. Specific path patterns (ui/readables, flares) must precede general ones (ui/*, fx_*). BC7_UNORM for weapons, characters, diffuse, and bump maps. BC5_UNORM only for true two-channel normal maps, never for _bump (see the Bump Maps profile). BC7 is CPU-intensive on Linux (no GPU acceleration); expect 3-5x slower compression than default. Will use GPU accceleration on Windows.",
     "minFileSizeBytes": 1024,
     "excludePatterns": [
         "fx_sun*",
@@ -43,8 +43,9 @@
             ]
         },
         {
-            "name": "Normal Maps",
-            "format": "BC5_UNORM",
+            "_why": "X-Ray bump maps use all four channels — gloss in R, normal in G/B/A, parallax height in the _bump# alpha. BC5 keeps two channels and returns 0 for blue and 1 for alpha, so it deletes the normal and the height. BC7 costs the same 1 byte per texel and keeps all four.",
+            "name": "Bump Maps",
+            "format": "BC7_UNORM",
             "generateMips": true,
             "exclude": [
                 "*scope*bump*",
@@ -53,14 +54,23 @@
             "patterns": [
                 "*_bump.*",
                 "*_bump#.*",
+                "*nbump*",
+                "*_normalbump.*",
+                "*_normalbump#.*"
+            ]
+        },
+        {
+            "_why": "BC5 is right only for a true two-channel tangent-space normal map. In a STALKER install that is a rare, non-native naming convention — anything named _bump belongs to the profile above.",
+            "name": "Normal Maps",
+            "format": "BC5_UNORM",
+            "generateMips": true,
+            "patterns": [
                 "*_normal.*",
                 "*_nm.*",
                 "*_nmap.*",
                 "*_nrm.*",
                 "*_norm.*",
                 "*_norm_*",
-                "*nbump*",
-                "*_normalbump.*",
                 "*_nm_*"
             ]
         },
