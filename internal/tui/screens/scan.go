@@ -16,16 +16,16 @@ import (
 
 // assetFoundMsg carries one discovered asset and the channels to continue reading.
 type assetFoundMsg struct {
-	asset     scan.Asset
-	ch        <-chan scan.Asset
-	skippedCh <-chan int
+	asset   scan.Asset
+	ch      <-chan scan.Asset
+	statsCh <-chan scan.Stats
 }
 
 // scanCompleteMsg signals the walker is finished.
 type scanCompleteMsg struct {
-	total   int
-	skipped int
-	err     string // non-empty aborts to error display without navigating to results
+	total int
+	stats scan.Stats
+	err   string // non-empty aborts to error display without navigating to results
 }
 
 // ScanModel shows a live counter while the walker runs.
@@ -105,25 +105,25 @@ func (m ScanModel) startScan() tea.Cmd {
 			if buildErr != nil {
 				return NavigateMsg{To: NavResults, Data: ScanResultData{ModlistError: modlistErrBadPath}}
 			}
-			ch, skippedCh, _ := scan.WalkVirtual(virtualFS, cfg.ModsDir, profiles, excludePatterns, exclusions, minFileSize)
-			return readNextAsset(ctx, ch, skippedCh)
+			ch, statsCh, _ := scan.WalkVirtual(virtualFS, cfg.ModsDir, profiles, excludePatterns, exclusions, minFileSize)
+			return readNextAsset(ctx, ch, statsCh)
 		}
 
-		ch, skippedCh, _ := scan.Walk(cfg.ModsDir, profiles, excludePatterns, cfg.ScanExclusions, minFileSize)
-		return readNextAsset(ctx, ch, skippedCh)
+		ch, statsCh, _ := scan.Walk(cfg.ModsDir, profiles, excludePatterns, cfg.ScanExclusions, minFileSize)
+		return readNextAsset(ctx, ch, statsCh)
 	}
 }
 
-func readNextAsset(ctx context.Context, ch <-chan scan.Asset, skippedCh <-chan int) tea.Msg {
+func readNextAsset(ctx context.Context, ch <-chan scan.Asset, statsCh <-chan scan.Stats) tea.Msg {
 	select {
 	case <-ctx.Done():
 		go func() { for range ch {} }() // drain so walker goroutine exits
 		return scanCompleteMsg{}
 	case asset, ok := <-ch:
 		if !ok {
-			return scanCompleteMsg{skipped: <-skippedCh}
+			return scanCompleteMsg{stats: <-statsCh}
 		}
-		return assetFoundMsg{asset: asset, ch: ch, skippedCh: skippedCh}
+		return assetFoundMsg{asset: asset, ch: ch, statsCh: statsCh}
 	}
 }
 
@@ -137,9 +137,9 @@ func (m ScanModel) Update(msg tea.Msg) (ScanModel, tea.Cmd) {
 	case assetFoundMsg:
 		m.assets = append(m.assets, msg.asset)
 		m.found++
-		ch, skippedCh := msg.ch, msg.skippedCh
+		ch, statsCh := msg.ch, msg.statsCh
 		ctx := m.ctx
-		return m, func() tea.Msg { return readNextAsset(ctx, ch, skippedCh) }
+		return m, func() tea.Msg { return readNextAsset(ctx, ch, statsCh) }
 
 	case scanCompleteMsg:
 		m.done = true
@@ -147,13 +147,17 @@ func (m ScanModel) Update(msg tea.Msg) (ScanModel, tea.Cmd) {
 			m.err = msg.err
 			return m, nil
 		}
-		if m.found == 0 {
+		// "Nothing found" means the scan saw nothing at all. A run that emitted no
+		// assets can still have plenty to report: every texture already compressed,
+		// or a pile of files it could not read. Stopping here on either of those
+		// threw that away and told the user the directory was empty.
+		if m.found == 0 && msg.stats.Skipped == 0 && len(msg.stats.Unreadable) == 0 {
 			m.err = "No .dds files found in " + m.cfg.ModsDir
 			return m, nil
 		}
-		assets, skipped := m.assets, msg.skipped
+		assets, stats := m.assets, msg.stats
 		return m, func() tea.Msg {
-			return NavigateMsg{To: NavResults, Data: ScanResultData{Assets: assets, Skipped: skipped}}
+			return NavigateMsg{To: NavResults, Data: ScanResultData{Assets: assets, Stats: stats}}
 		}
 	}
 	return m, nil

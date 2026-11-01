@@ -39,8 +39,8 @@ type AppModel struct {
 	width     int
 	height    int
 
-	scanAssets  []scan.Asset
-	scanSkipped int
+	scanAssets []scan.Asset
+	scanStats  scan.Stats
 
 	// Screens.
 	welcome    screens.WelcomeModel
@@ -223,12 +223,12 @@ func (m AppModel) handleNavigate(msg screens.NavigateMsg) (tea.Model, tea.Cmd) {
 	case screens.NavResults:
 		if data, ok := msg.Data.(screens.ScanResultData); ok {
 			m.scanAssets = data.Assets
-			m.scanSkipped = data.Skipped
+			m.scanStats = data.Stats
 		}
 		m.screen = ScreenResults
 		m.results = screens.NewResults(screens.ScanResultData{
-			Assets:  m.scanAssets,
-			Skipped: m.scanSkipped,
+			Assets: m.scanAssets,
+			Stats:  m.scanStats,
 		}, m.cfg)
 		m.results.SetSize(m.width, m.height)
 		return m, m.results.Init()

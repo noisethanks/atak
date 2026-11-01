@@ -27,21 +27,44 @@ type Asset struct {
 	VirtualRelPath string // set by WalkVirtual: path relative to mod root (e.g. gamedata/textures/wpn/ak74.dds)
 }
 
+// UnreadableFile is a .dds the scan found and could not read. It is not an Asset,
+// because nothing is known about it beyond its name — not its format, not its
+// size on screen, not which profile would claim it.
+type UnreadableFile struct {
+	Path    string
+	ModName string
+	Reason  string
+}
+
+// Stats reports every file a scan saw and did not emit as an Asset. The two
+// fields answer different questions and must not be added together.
+//
+// Skipped is a correct decision: the file is already compressed, is below the
+// minimum size, or sits in a variant folder ATAK does not merge.
+//
+// Unreadable is a decision ATAK could not make. Both walkers used to drop these
+// files with a bare continue, so a mod shipping a PNG named .dds — the game
+// cannot load one either — left no trace in the UI at all.
+type Stats struct {
+	Skipped    int
+	Unreadable []UnreadableFile
+}
+
 // Walk traverses modsDir, emitting Asset values for every uncompressed .dds file found.
 // excludePatterns are globs from profiles.json — patterns without '/' match the basename,
 // patterns with '/' match the full path relative to the mod root. Matched files are emitted
 // with Excluded:true. exclusions are directory globs from config.json — a plain name
 // matches a directory anywhere, a path pattern matches its mod-root-relative path; a
 // matched directory and its whole subtree are skipped entirely.
-// Returns three channels: assets, skipped count (one value sent on completion), and errors.
-func Walk(modsDir string, profiles []config.Profile, excludePatterns []string, exclusions []string, minFileSizeBytes int) (<-chan Asset, <-chan int, <-chan error) {
+// Returns three channels: assets, Stats (one value sent on completion), and errors.
+func Walk(modsDir string, profiles []config.Profile, excludePatterns []string, exclusions []string, minFileSizeBytes int) (<-chan Asset, <-chan Stats, <-chan error) {
 	assets := make(chan Asset, 256)
-	skippedCh := make(chan int, 1)
+	statsCh := make(chan Stats, 1)
 	errs := make(chan error, 1)
 
 	go func() {
 		defer close(errs)
-		var skipped int
+		var stats Stats
 
 		err := filepath.WalkDir(modsDir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -58,27 +81,32 @@ func Walk(modsDir string, profiles []config.Profile, excludePatterns []string, e
 				return nil
 			}
 			if fi, fiErr := d.Info(); fiErr == nil && fi.Size() < int64(minFileSizeBytes) {
-				skipped++
-				return nil
-			}
-
-			info, err := ParseDDS(path)
-			if err != nil {
-				return nil // skip unparseable files silently
-			}
-			if info.Compressed {
-				skipped++
+				stats.Skipped++
 				return nil
 			}
 
 			rel, _ := filepath.Rel(modsDir, path)
-			if strings.Count(filepath.ToSlash(rel), "gamedata") > 1 {
-				skipped++
-				return nil // variant folder with double gamedata path
+
+			info, err := ParseDDS(path)
+			if err != nil {
+				stats.Unreadable = append(stats.Unreadable, UnreadableFile{
+					Path:    path,
+					ModName: modNameFromRel(rel),
+					Reason:  err.Error(),
+				})
+				return nil
+			}
+			if info.Compressed {
+				stats.Skipped++
+				return nil
+			}
+
+			if strings.Count(strings.ToLower(filepath.ToSlash(rel)), "gamedata") > 1 {
+				stats.Skipped++
+				return nil // variant folder with double gamedata path, in any spelling
 			}
 			modName := modNameFromRel(rel)
 			base := filepath.Base(path)
-
 			modRelSlash := modRelPath(rel)
 
 			// Global exclude check — runs before profile matching.
@@ -117,15 +145,15 @@ func Walk(modsDir string, profiles []config.Profile, excludePatterns []string, e
 			}
 			return nil
 		})
-		skippedCh <- skipped
+		statsCh <- stats
 		close(assets)
-		close(skippedCh)
+		close(statsCh)
 		if err != nil {
 			errs <- err
 		}
 	}()
 
-	return assets, skippedCh, errs
+	return assets, statsCh, errs
 }
 
 // WalkVirtual scans a pre-built virtual filesystem map (relPath→absPath) instead of
@@ -135,49 +163,63 @@ func Walk(modsDir string, profiles []config.Profile, excludePatterns []string, e
 // already have removed whole mods from the modList passed to BuildVirtualFS (see
 // ExcludesMod), while path patterns are applied here per file, since a flat virtual FS
 // has no directory walk to prune.
-func WalkVirtual(virtualFS map[string]string, modsDir string, profiles []config.Profile, excludePatterns []string, exclusions []string, minFileSizeBytes int) (<-chan Asset, <-chan int, <-chan error) {
+func WalkVirtual(virtualFS map[string]string, modsDir string, profiles []config.Profile, excludePatterns []string, exclusions []string, minFileSizeBytes int) (<-chan Asset, <-chan Stats, <-chan error) {
 	assets := make(chan Asset, 256)
-	skippedCh := make(chan int, 1)
+	statsCh := make(chan Stats, 1)
 	errs := make(chan error, 1)
 
 	go func() {
 		defer close(errs)
-		var skipped int
+		var stats Stats
+
+		// unreadable records a file the scan could not classify. Reporting it is the
+		// whole point: the alternative, a bare continue, leaves the file out of every
+		// count and the user never learns it is there.
+		unreadable := func(path, mod, reason string) {
+			stats.Unreadable = append(stats.Unreadable, UnreadableFile{
+				Path:    path,
+				ModName: mod,
+				Reason:  reason,
+			})
+		}
 
 		for relPath, absPath := range virtualFS {
 			relSlash := filepath.ToSlash(relPath)
 			if underExcludedDir(relSlash, exclusions) {
 				continue // inside a directory the scan excludes — pruned in Walk, skipped here
 			}
-			if strings.Count(relSlash, "gamedata") > 1 {
-				skipped++
-				continue // variant folder with double gamedata path
+			if strings.Count(strings.ToLower(relSlash), "gamedata") > 1 {
+				stats.Skipped++
+				continue // variant folder with double gamedata path, in any spelling
 			}
 			if !strings.EqualFold(filepath.Ext(absPath), ".dds") {
 				continue
 			}
 
-			fi, err := os.Stat(absPath)
-			if err != nil {
-				continue
-			}
-			if fi.Size() < int64(minFileSizeBytes) {
-				skipped++
-				continue
-			}
-
 			relToMods, relErr := filepath.Rel(modsDir, absPath)
 			if relErr != nil {
+				unreadable(absPath, "", relErr.Error())
 				continue
 			}
 			modName := modNameFromRel(relToMods)
 
+			fi, err := os.Stat(absPath)
+			if err != nil {
+				unreadable(absPath, modName, err.Error())
+				continue
+			}
+			if fi.Size() < int64(minFileSizeBytes) {
+				stats.Skipped++
+				continue
+			}
+
 			info, err := ParseDDS(absPath)
 			if err != nil {
+				unreadable(absPath, modName, err.Error())
 				continue
 			}
 			if info.Compressed {
-				skipped++
+				stats.Skipped++
 				continue
 			}
 
@@ -219,12 +261,12 @@ func WalkVirtual(virtualFS map[string]string, modsDir string, profiles []config.
 			}
 		}
 
-		skippedCh <- skipped
+		statsCh <- stats
 		close(assets)
-		close(skippedCh)
+		close(statsCh)
 	}()
 
-	return assets, skippedCh, errs
+	return assets, statsCh, errs
 }
 
 // modNameFromRel extracts the top-level mod directory name from a relative path.
@@ -256,10 +298,10 @@ func modRelPath(rel string) string {
 // will match.
 //
 // A profile's exclude list means that profile declines the file, not that the file is
-// dropped: matching continues with later profiles, so e.g. scope bump maps decline
-// Normal Maps (BC5 would discard their blue/alpha) and fall through to Scope Textures.
-// To drop a file outright, use the global excludePatterns instead — those are also
-// reported in the scan as Excluded, whereas a profile decline is silent.
+// dropped: matching continues with later profiles, so e.g. scope diffuse textures decline
+// Diffuse / Color and fall through to Scope Textures, which groups every part of a scope
+// under one profile. To drop a file outright, use the global excludePatterns instead —
+// those are also reported in the scan as Excluded, whereas a profile decline is silent.
 func matchProfile(relSlash string, profiles []config.Profile) (name, format string) {
 	base := filepath.Base(relSlash)
 	for _, p := range profiles {

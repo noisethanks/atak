@@ -7,19 +7,22 @@ import (
 	"github.com/noisethanks/atak/internal/config"
 )
 
-// testProfiles mirrors the ordering used by the shipped config: Normal Maps sits well
-// ahead of Scope Textures, so scope bump maps only reach BC7 if a profile's exclude
-// list lets matching continue rather than dropping the file.
+// testProfiles mirrors the ordering used by the shipped config: Bump Maps sits well
+// ahead of Scope Textures, so scope bump maps only reach the scope profile if a
+// profile's exclude list lets matching continue rather than dropping the file.
 func testProfiles() []config.Profile {
 	return []config.Profile{
 		{Name: "UI Readables", Format: "BC3_UNORM", Patterns: []string{"*/textures/ui/readables/*"}},
 		{
-			Name:    "Normal Maps",
-			Format:  "BC5_UNORM",
-			Exclude: []string{"*scope*bump*", "*lens_bump*"},
-			Patterns: []string{
-				"*_bump.*", "*_bump#.*", "*_normal.*", "*_nm.*", "*_nrm.*",
-			},
+			Name:     "Bump Maps",
+			Format:   "BC7_UNORM",
+			Exclude:  []string{"*scope*bump*", "*lens_bump*"},
+			Patterns: []string{"*_bump.*", "*_bump#.*"},
+		},
+		{
+			Name:     "Normal Maps",
+			Format:   "BC5_UNORM",
+			Patterns: []string{"*_normal.*", "*_nm.*", "*_nrm.*"},
 		},
 		{Name: "UI / Icons", Format: "BC3_UNORM", Patterns: []string{"*/textures/ui/*", "*_icons.*"}},
 		{Name: "Diffuse / Color", Format: "BC7_UNORM", Patterns: []string{"*_d.*", "*_diff.*", "*_b.*"}},
@@ -38,17 +41,17 @@ func TestMatchProfile(t *testing.T) {
 		wantFormat string
 	}{
 		{
-			// The regression this exists for: Normal Maps matches *_bump.* first but
+			// The regression this exists for: Bump Maps matches *_bump.* first but
 			// declines via its exclude list. Before the fix this dropped the file
-			// entirely; it must now fall through to Scope Textures at BC7, because
-			// BC5 is two-channel and would discard packed blue/alpha.
-			name:       "scope bump declines Normal Maps and reaches Scope Textures",
+			// entirely; it must now fall through to Scope Textures, which keeps every
+			// part of a scope in one profile.
+			name:       "scope bump declines Bump Maps and reaches Scope Textures",
 			rel:        "gamedata/textures/wpn/wpn_aug/aug_scope_bump.dds",
 			wantName:   "Scope Textures",
 			wantFormat: "BC7_UNORM",
 		},
 		{
-			name:       "lens bump declines Normal Maps and reaches Scope Textures",
+			name:       "lens bump declines Bump Maps and reaches Scope Textures",
 			rel:        "gamedata/textures/wpn/elcan_lens_bump.dds",
 			wantName:   "Scope Textures",
 			wantFormat: "BC7_UNORM",
@@ -61,8 +64,16 @@ func TestMatchProfile(t *testing.T) {
 		},
 		{
 			// An exclude on one profile must not leak into unrelated files.
-			name:       "ordinary bump map still claimed by Normal Maps",
+			name:       "ordinary bump map still claimed by Bump Maps",
 			rel:        "gamedata/textures/wpn/ak74_bump.dds",
+			wantName:   "Bump Maps",
+			wantFormat: "BC7_UNORM",
+		},
+		{
+			// The split the Bump Maps profile exists for: BC5 survives only for a
+			// name that really does mean a two-channel normal map.
+			name:       "true normal map still claimed by Normal Maps",
+			rel:        "gamedata/textures/wpn/ak74_nrm.dds",
 			wantName:   "Normal Maps",
 			wantFormat: "BC5_UNORM",
 		},
@@ -164,8 +175,8 @@ func TestModRelPathFeedsPathPatterns(t *testing.T) {
 // matches is reported as unmatched rather than silently vanishing from the scan.
 func TestMatchProfileDeclineWithNoFallthrough(t *testing.T) {
 	profiles := []config.Profile{{
-		Name:     "Normal Maps",
-		Format:   "BC5_UNORM",
+		Name:     "Bump Maps",
+		Format:   "BC7_UNORM",
 		Exclude:  []string{"*scope*bump*"},
 		Patterns: []string{"*_bump.*"},
 	}}
