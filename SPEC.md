@@ -981,6 +981,28 @@ assets are filtered to the chosen mod before passing to the worker pool.
   `align_e2e_test.go` (real binaries, header and payload assertions), and
   `align_corpus_test.go` (opt-in via `ATAK_CORPUS`, walks a real mod tree).
 
+- **24-bit channel order (compressonator reads R and B transposed).**
+  compressonator-bc7e reads an uncompressed 24-bit DDS with red and blue swapped,
+  so every 24-bit source it encoded came out with the two exchanged. Nothing
+  failed: the file compressed cleanly, the header was right, and only the picture
+  was wrong. Measured with a 4x4 pure-red fixture (masks 0x00ff0000 / 0x0000ff00 /
+  0x000000ff, the layout every 24-bit DDS in the corpus uses), decoded back to
+  RGBA: red in, blue out. texconv reads the same file correctly. In one GAMMA
+  modlist it reached 109 outputs, food icons and sky textures among them, 42 of
+  which were visibly wrong rather than near-grey.
+
+  `prepassPlan` in `internal/compress/backend.go` routes those files down the
+  same split the resize rules use, at the source's own dimensions: texconv writes
+  the `R8G8B8A8_UNORM` intermediate, which compressonator reads correctly, and the
+  configured encoder still does the encoding. No new machinery, and no cost for
+  any other source. The condition is narrow on purpose — compressonator as primary
+  plus a 24-bit source format — so an unrelated future failure stays visible
+  instead of being absorbed by a silent conversion. Affected files are reported
+  under `FallbackChannelOrder`; block alignment still wins the attribution when
+  both rules fire, since a changed dimension is the more surprising outcome.
+  Regression coverage: `internal/compress/channel_order_test.go` (real binaries,
+  decoded pixels) and the planner cases in `align_test.go`.
+
 - **DDS-reader gap fallback (compressonator → texconv, narrow match).**
   compressonator-bc7e's DDS loader rejects some subvariants DirectXTex handles
   — most commonly DX10-header DDS with an sRGB DXGI_FORMAT (e.g.
@@ -1076,8 +1098,9 @@ assets are filtered to the chosen mod before passing to the worker pool.
 - Error list is navigable; failed files are shown with their stderr output
 - No retry with different settings — if a file failed, fix profiles.json and rescan
 
-- **Fallback surfacing on summary screen.** All three fallbacks (BC7→BC3,
-  compressonator→texconv resize, compressonator→texconv DDS reader gap) set
+- **Fallback surfacing on summary screen.** Every fallback (BC7→BC3,
+  compressonator→texconv resize, block alignment, 24-bit channel order,
+  compressonator→texconv DDS reader gap) sets
   `CompressionResult.FallbackReason` to one of the `compress.Fallback*`
   constants on success. The Compress→Summary bridge accumulates a
   `FallbackCounts` map (reason → count) and a `Fallbacks` string slice

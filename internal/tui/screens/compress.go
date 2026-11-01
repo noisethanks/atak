@@ -241,8 +241,16 @@ func buildJobs(data CompressJobData) []compress.Job {
 			if i < len(g.Heights) {
 				h = g.Heights[i]
 			}
+			// The source format decides whether the file needs a channel-order
+			// conversion before compressonator reads it. Dropping it here is what
+			// made that fix inert: dispatch saw an empty format and took the plain
+			// path for every 24-bit source.
+			var currentFmt string
+			if i < len(g.Formats) {
+				currentFmt = g.Formats[i]
+			}
 			job := compress.Job{
-				Asset:          scan.Asset{Path: path, Width: w, Height: h},
+				Asset:          scan.Asset{Path: path, Width: w, Height: h, CurrentFmt: currentFmt},
 				Format:         g.Format,
 				GenerateMips:   genMips,
 				MaxTextureSize: g.MaxTextureSize,

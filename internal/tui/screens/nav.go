@@ -70,7 +70,12 @@ type ConfiguredGroup struct {
 	RelPaths       []string // parallel to Paths; non-empty element = VirtualRelPath for that asset
 	Widths         []int    // parallel to Paths; source texture width in pixels
 	Heights        []int    // parallel to Paths; source texture height in pixels
-	OutputDir      string   // empty means in-place (filepath.Dir of each asset)
+	// Formats is parallel to Paths and carries the source DDS format the scan read
+	// from each header. dispatch() needs it: compressonator-bc7e reads a 24-bit
+	// source with red and blue transposed, and the format name is the only way to
+	// know a file is 24-bit by the time a job is built.
+	Formats   []string
+	OutputDir string // empty means in-place (filepath.Dir of each asset)
 }
 
 // SummaryData is passed from Compress → Summary.

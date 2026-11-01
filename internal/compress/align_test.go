@@ -153,7 +153,8 @@ func TestPlanResizeOutputIsAlwaysAligned(t *testing.T) {
 
 // TestNeedsResize checks the routing predicate dispatch() uses. compressonator-bc7e
 // has no -w/-h, so every job with a resize plan has to reach texconv instead.
-func TestNeedsResize(t *testing.T) {
+func TestPrepassPlanSizeRules(t *testing.T) {
+	texconv := NewTexconvBackend("")
 	tests := []struct {
 		name string
 		job  Job
@@ -167,9 +168,63 @@ func TestNeedsResize(t *testing.T) {
 		{"no dimensions", Job{Asset: scan.Asset{}, Format: "BC7_UNORM"}, false},
 	}
 	for _, tt := range tests {
-		if got := needsResize(tt.job); got != tt.want {
-			t.Errorf("%s: needsResize = %v, want %v", tt.name, got, tt.want)
+		if got := prepassPlan(texconv, tt.job).needed(); got != tt.want {
+			t.Errorf("%s: prepassPlan().needed() = %v, want %v", tt.name, got, tt.want)
 		}
+	}
+}
+
+// TestPrepassPlanChannelRule covers the rule that has nothing to do with size: a
+// 24-bit source must reach compressonator as RGBA, because compressonator reads
+// 24-bit with red and blue transposed. The plan keeps the source dimensions, so
+// the resample changes the format and not the picture.
+func TestPrepassPlanChannelRule(t *testing.T) {
+	compressonator := NewCompressonatorBackend("")
+	texconv := NewTexconvBackend("")
+
+	job := Job{
+		Asset:  scan.Asset{Width: 512, Height: 512, CurrentFmt: "R8G8B8_UNORM"},
+		Format: "BC7_UNORM",
+	}
+
+	plan := prepassPlan(compressonator, job)
+	if !plan.needed() || !plan.Convert {
+		t.Fatalf("24-bit source on compressonator: got %+v, want a conversion plan", plan)
+	}
+	if plan.Width != 512 || plan.Height != 512 {
+		t.Errorf("conversion resized the picture: got %dx%d, want 512x512", plan.Width, plan.Height)
+	}
+	if plan.reason() != FallbackChannelOrder {
+		t.Errorf("reason = %q, want %q", plan.reason(), FallbackChannelOrder)
+	}
+
+	// texconv reads 24-bit correctly, so it never pays for the extra step.
+	if p := prepassPlan(texconv, job); p.needed() || p.Convert {
+		t.Errorf("texconv primary: got %+v, want no plan", p)
+	}
+
+	// A 32-bit source is left alone on both backends.
+	rgba := job
+	rgba.Asset.CurrentFmt = "R8G8B8A8_UNORM"
+	if p := prepassPlan(compressonator, rgba); p.needed() || p.Convert {
+		t.Errorf("32-bit source: got %+v, want no plan", p)
+	}
+
+	// Block alignment still wins the attribution when a 24-bit source is also
+	// misaligned: a changed dimension is the surprising part.
+	both := Job{
+		Asset:  scan.Asset{Width: 269, Height: 271, CurrentFmt: "R8G8B8_UNORM"},
+		Format: "BC7_UNORM",
+	}
+	p := prepassPlan(compressonator, both)
+	if !p.Aligned || !p.Convert {
+		t.Fatalf("misaligned 24-bit source: got %+v, want both rules set", p)
+	}
+	if p.Width != 272 || p.Height != 272 {
+		t.Errorf("got %dx%d, want 272x272", p.Width, p.Height)
+	}
+	if p.reason() != FallbackBlockAlign {
+		t.Errorf("reason = %q, want %q", p.reason(), FallbackBlockAlign)
 	}
 }
 
