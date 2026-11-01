@@ -122,6 +122,26 @@ func TestBuildVirtualFSSkipsVariantFoldersInAnySpelling(t *testing.T) {
 	}
 }
 
+// The guard matches whole path segments, not substrings of the name.
+func TestBuildVirtualFSVariantGuardMatchesSegments(t *testing.T) {
+	modsDir := t.TempDir()
+	old := filepath.Join("gamedata", "textures", "GameData_old", "x.dds")
+	plain := filepath.Join("gamedata", "textures", "wpn", "x.dds")
+	writeModFile(t, modsDir, "Gamedata Fixes", plain, "x")
+	writeModFile(t, modsDir, "ModA", old, "x")
+
+	virtual, err := BuildVirtualFS(modsDir, []string{"Gamedata Fixes", "ModA"})
+	if err != nil {
+		t.Fatalf("BuildVirtualFS: %v", err)
+	}
+	if _, ok := virtual[plain]; !ok {
+		t.Error("file in mod named \"Gamedata Fixes\" was pruned")
+	}
+	if _, ok := virtual[old]; !ok {
+		t.Error("file under GameData_old was pruned")
+	}
+}
+
 func writeModFile(t *testing.T, modsDir, mod, rel, content string) {
 	t.Helper()
 	full := filepath.Join(modsDir, mod, rel)

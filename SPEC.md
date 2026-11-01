@@ -810,6 +810,29 @@ whichever later profile wants them — Scope Textures. Declining is therefore a
 routing decision, not a skip. Use the top-level `excludePatterns`
 when the intent is genuinely "never compress this file".
 
+#### Per-file check order and variant folders
+
+Both walkers (`Walk` and `WalkVirtual`) apply the same order to every `.dds` file,
+and stop at the first check that claims it:
+
+1. `scanExclusions` (config.json directory globs) — pruned, not counted.
+2. Variant-folder guard — counted as skipped.
+3. Minimum size (`minFileSizeBytes`) — counted as skipped.
+4. Global `excludePatterns`.
+5. Header parse — on failure the file is `Unreadable`.
+
+An excluded file is always reported as Excluded, never Unreadable, even if its
+header cannot be parsed (its format and size fields are then empty). If an
+excluded file parses as already compressed it is counted as skipped.
+
+**Variant-folder guard.** A file is skipped when more than one segment of its
+mod-root-relative path equals `gamedata`, case-insensitively
+(`gamedata/Blue/Gamedata/textures/x.dds`). Matching is by whole path segment, not
+substring: `gamedata/textures/GameData_old/x.dds` is not a variant folder, and the
+mod folder name is not part of the path, so a mod named `Gamedata Fixes` is
+unaffected. `scan.IsVariantPath` implements the rule for both walkers and
+`BuildVirtualFS`.
+
 #### Global Exclusion Patterns
 
 See `excludePatterns` under profiles.json Format Reference, above, for the
@@ -818,7 +841,8 @@ profile matching; a matching file is skipped and counted as "Excluded".
 
 **Counters on scan results screen:**
 - `___ to compress` — total files matched by profiles (excluding excluded files)
-- `___ skipped (compressed)` — files already compressed, skipped by scanner
+- `___ skipped` — files the scanner correctly passed over: already compressed,
+  smaller than `minFileSizeBytes`, or inside a variant folder (see below)
 - `___ unmatched` — uncompressed files with no profile match (informational)
 - `___ excluded` — files matching global excludePatterns
 - `___ unreadable` — named `.dds` but the header could not be read, or the file
@@ -1437,8 +1461,9 @@ are compressed. Existing compressed files in the output folder are untouched.
 **User communication — incremental skips must be surfaced clearly:**
 
 The scan results and execution screens show a separate counter:
-`X already in output folder` — distinct from `skipped (compressed)` which
-refers to already-compressed source files.
+`X already in output folder` — distinct from `skipped`, which
+counts source files the scanner passed over (already compressed, under
+`minFileSizeBytes`, or in a variant folder).
 
 If ALL files are skipped because the output folder already has everything:
 - Summary screen shows: "Nothing to compress — all files already exist

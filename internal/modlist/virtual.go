@@ -4,6 +4,8 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strings"
+
+	"github.com/noisethanks/atak/internal/scan"
 )
 
 // BuildVirtualFS assembles a virtual filesystem representing the merged MO2
@@ -37,12 +39,10 @@ func BuildVirtualFS(modsDir string, modList []string) (map[string]string, error)
 			if relErr != nil {
 				return nil
 			}
-			key := strings.ToLower(filepath.ToSlash(rel))
-			if strings.Count(key, "gamedata") > 1 {
-				// Variant folder (e.g. gamedata/Green/gamedata/...). Counted on the
-				// folded key, because a mod spelling it Gamedata means the same thing.
-				return nil
+			if scan.IsVariantPath(rel) {
+				return nil // variant folder, e.g. gamedata/Green/gamedata/...
 			}
+			key := strings.ToLower(filepath.ToSlash(rel))
 			if prev, ok := keyOf[key]; ok && prev != rel {
 				delete(virtual, prev) // this mod outranks the one that spelled it differently
 			}

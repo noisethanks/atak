@@ -287,7 +287,7 @@ func (m ResultsModel) View() string {
 	b.WriteString(fmt.Sprintf(
 		"%s  %s  %s  %s\n\n",
 		style.StyleBody.Render(fmt.Sprintf("%d to compress", total)),
-		style.StyleMuted.Render(fmt.Sprintf("%d skipped (compressed)", m.skipped)),
+		style.StyleMuted.Render(fmt.Sprintf("%d skipped", m.skipped)),
 		style.StyleMuted.Render(fmt.Sprintf("%d unmatched", len(m.unmatched))),
 		style.StyleMuted.Render(fmt.Sprintf("%d excluded", len(m.excluded))),
 	))

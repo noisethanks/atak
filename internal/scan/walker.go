@@ -80,69 +80,17 @@ func Walk(modsDir string, profiles []config.Profile, excludePatterns []string, e
 			if !strings.EqualFold(filepath.Ext(path), ".dds") {
 				return nil
 			}
+			rel, _ := filepath.Rel(modsDir, path)
+			modRelSlash := modRelPath(rel)
+			if IsVariantPath(modRelSlash) {
+				stats.Skipped++
+				return nil
+			}
 			if fi, fiErr := d.Info(); fiErr == nil && fi.Size() < int64(minFileSizeBytes) {
 				stats.Skipped++
 				return nil
 			}
-
-			rel, _ := filepath.Rel(modsDir, path)
-
-			info, err := ParseDDS(path)
-			if err != nil {
-				stats.Unreadable = append(stats.Unreadable, UnreadableFile{
-					Path:    path,
-					ModName: modNameFromRel(rel),
-					Reason:  err.Error(),
-				})
-				return nil
-			}
-			if info.Compressed {
-				stats.Skipped++
-				return nil
-			}
-
-			if strings.Count(strings.ToLower(filepath.ToSlash(rel)), "gamedata") > 1 {
-				stats.Skipped++
-				return nil // variant folder with double gamedata path, in any spelling
-			}
-			modName := modNameFromRel(rel)
-			base := filepath.Base(path)
-			modRelSlash := modRelPath(rel)
-
-			// Global exclude check — runs before profile matching.
-			if matchAnyPattern(base, modRelSlash, excludePatterns) {
-				assets <- Asset{
-					Path:           path,
-					ModName:        modName,
-					CurrentFmt:     info.Format,
-					Width:          info.Width,
-					Height:         info.Height,
-					HasAlpha:       info.HasAlpha,
-					ProfileMatch:   "Excluded",
-					Excluded:       true,
-					SourceMipCount: info.MipMapCount,
-				}
-				return nil
-			}
-
-			// Profile matching with per-profile exclusion.
-			profileName, suggestedFmt := matchProfile(modRelSlash, profiles)
-			if profileName == "" {
-				profileName = "Unmatched"
-			}
-
-			assets <- Asset{
-				Path:           path,
-				ModName:        modName,
-				CurrentFmt:     info.Format,
-				Compressed:     info.Compressed,
-				Width:          info.Width,
-				Height:         info.Height,
-				HasAlpha:       info.HasAlpha,
-				ProfileMatch:   profileName,
-				SuggestedFmt:   suggestedFmt,
-				SourceMipCount: info.MipMapCount,
-			}
+			classify(path, modNameFromRel(rel), modRelSlash, "", profiles, excludePatterns, assets, &stats)
 			return nil
 		})
 		statsCh <- stats
@@ -172,93 +120,36 @@ func WalkVirtual(virtualFS map[string]string, modsDir string, profiles []config.
 		defer close(errs)
 		var stats Stats
 
-		// unreadable records a file the scan could not classify. Reporting it is the
-		// whole point: the alternative, a bare continue, leaves the file out of every
-		// count and the user never learns it is there.
-		unreadable := func(path, mod, reason string) {
-			stats.Unreadable = append(stats.Unreadable, UnreadableFile{
-				Path:    path,
-				ModName: mod,
-				Reason:  reason,
-			})
-		}
-
 		for relPath, absPath := range virtualFS {
 			relSlash := filepath.ToSlash(relPath)
 			if underExcludedDir(relSlash, exclusions) {
 				continue // inside a directory the scan excludes — pruned in Walk, skipped here
 			}
-			if strings.Count(strings.ToLower(relSlash), "gamedata") > 1 {
-				stats.Skipped++
-				continue // variant folder with double gamedata path, in any spelling
-			}
 			if !strings.EqualFold(filepath.Ext(absPath), ".dds") {
+				continue
+			}
+			if IsVariantPath(relSlash) {
+				stats.Skipped++
 				continue
 			}
 
 			relToMods, relErr := filepath.Rel(modsDir, absPath)
 			if relErr != nil {
-				unreadable(absPath, "", relErr.Error())
+				stats.Unreadable = append(stats.Unreadable, UnreadableFile{Path: absPath, Reason: relErr.Error()})
 				continue
 			}
 			modName := modNameFromRel(relToMods)
 
 			fi, err := os.Stat(absPath)
 			if err != nil {
-				unreadable(absPath, modName, err.Error())
+				stats.Unreadable = append(stats.Unreadable, UnreadableFile{Path: absPath, ModName: modName, Reason: err.Error()})
 				continue
 			}
 			if fi.Size() < int64(minFileSizeBytes) {
 				stats.Skipped++
 				continue
 			}
-
-			info, err := ParseDDS(absPath)
-			if err != nil {
-				unreadable(absPath, modName, err.Error())
-				continue
-			}
-			if info.Compressed {
-				stats.Skipped++
-				continue
-			}
-
-			base := filepath.Base(absPath)
-
-			// Global exclude check — runs before profile matching.
-			if matchAnyPattern(base, relSlash, excludePatterns) {
-				assets <- Asset{
-					Path:           absPath,
-					ModName:        modName,
-					CurrentFmt:     info.Format,
-					Width:          info.Width,
-					Height:         info.Height,
-					HasAlpha:       info.HasAlpha,
-					ProfileMatch:   "Excluded",
-					Excluded:       true,
-					SourceMipCount: info.MipMapCount,
-					VirtualRelPath: relPath,
-				}
-				continue
-			}
-
-			profileName, suggestedFmt := matchProfile(relSlash, profiles)
-			if profileName == "" {
-				profileName = "Unmatched"
-			}
-
-			assets <- Asset{
-				Path:           absPath,
-				ModName:        modName,
-				CurrentFmt:     info.Format,
-				Width:          info.Width,
-				Height:         info.Height,
-				HasAlpha:       info.HasAlpha,
-				ProfileMatch:   profileName,
-				SuggestedFmt:   suggestedFmt,
-				SourceMipCount: info.MipMapCount,
-				VirtualRelPath: relPath,
-			}
+			classify(absPath, modName, relSlash, relPath, profiles, excludePatterns, assets, &stats)
 		}
 
 		statsCh <- stats
@@ -267,6 +158,66 @@ func WalkVirtual(virtualFS map[string]string, modsDir string, profiles []config.
 	}()
 
 	return assets, statsCh, errs
+}
+
+// IsVariantPath reports whether a mod-root-relative path sits in a variant folder
+// ATAK does not merge (e.g. gamedata/Green/gamedata/...): more than one path
+// segment equals "gamedata", case-insensitively. Whole segments only — a folder
+// named GameData_old does not count, and callers must pass a path without the
+// mod-folder segment, or a mod called "Gamedata Fixes" would. Shared by both
+// walkers and BuildVirtualFS so the rule cannot diverge.
+func IsVariantPath(modRel string) bool {
+	n := 0
+	for _, seg := range strings.Split(filepath.ToSlash(modRel), "/") {
+		if strings.EqualFold(seg, "gamedata") {
+			n++
+		}
+	}
+	return n > 1
+}
+
+// classify is the tail both walkers share, so the check order cannot diverge:
+// global excludePatterns, then header parse (Unreadable on failure), then
+// compressed skip, then profile matching. An excluded file is reported Excluded
+// even when its header cannot be read; its format fields are then left empty.
+// An excluded file that parses as already compressed is still counted Skipped.
+// virtualRel is "" for Walk.
+func classify(path, modName, relSlash, virtualRel string, profiles []config.Profile, excludePatterns []string, assets chan<- Asset, stats *Stats) {
+	excluded := matchAnyPattern(filepath.Base(path), relSlash, excludePatterns)
+
+	info, err := ParseDDS(path)
+	if err != nil {
+		if excluded {
+			assets <- Asset{Path: path, ModName: modName, ProfileMatch: "Excluded", Excluded: true, VirtualRelPath: virtualRel}
+			return
+		}
+		stats.Unreadable = append(stats.Unreadable, UnreadableFile{Path: path, ModName: modName, Reason: err.Error()})
+		return
+	}
+	if info.Compressed {
+		stats.Skipped++
+		return
+	}
+
+	a := Asset{
+		Path:           path,
+		ModName:        modName,
+		CurrentFmt:     info.Format,
+		Width:          info.Width,
+		Height:         info.Height,
+		HasAlpha:       info.HasAlpha,
+		SourceMipCount: info.MipMapCount,
+		VirtualRelPath: virtualRel,
+	}
+	if excluded {
+		a.ProfileMatch, a.Excluded = "Excluded", true
+	} else {
+		a.ProfileMatch, a.SuggestedFmt = matchProfile(relSlash, profiles)
+		if a.ProfileMatch == "" {
+			a.ProfileMatch = "Unmatched"
+		}
+	}
+	assets <- a
 }
 
 // modNameFromRel extracts the top-level mod directory name from a relative path.
