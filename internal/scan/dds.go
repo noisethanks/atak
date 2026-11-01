@@ -31,44 +31,56 @@ var fourCCFormats = map[uint32]string{
 	0x30315844: "",           // DX10 — resolved via extended header
 }
 
-// DXGI format codes that map to BCn compressed formats.
+// DXGI format codes that map to BCn compressed formats. The codes come from the
+// DXGI_FORMAT enum, where each family runs TYPELESS, UNORM, then a third variant:
+// _UNORM_SRGB for BC1 to BC3 and BC7, _SNORM for BC4 and BC5. A TYPELESS code
+// reports the UNORM name, because the file holds the same block data either way
+// and nothing downstream separates them.
+//
+// The BCn codes are contiguous only up to 84. 85 to 93 are uncompressed formats
+// (B5G6R5_UNORM at 85, B8G8R8A8_UNORM at 87) and must stay out of this table: a
+// code listed here is reported as already compressed, so the file is never
+// compressed and never surfaced to the user.
 var dxgiCompressed = map[uint32]string{
-	70:  "BC1_UNORM",
-	71:  "BC1_UNORM",
-	72:  "BC1_UNORM",
-	74:  "BC2_UNORM",
-	75:  "BC2_UNORM",
-	76:  "BC2_UNORM",
-	77:  "BC3_UNORM",
-	78:  "BC3_UNORM",
-	79:  "BC3_UNORM",
-	80:  "BC4_UNORM",
-	81:  "BC4_UNORM",
-	82:  "BC4_SNORM",
-	83:  "BC5_UNORM",
-	84:  "BC5_UNORM",
-	85:  "BC5_SNORM",
-	94:  "BC6H_UF16",
-	95:  "BC6H_SF16",
-	96:  "BC6H_SF16",
-	97:  "BC7_UNORM",
-	98:  "BC7_UNORM",
-	99:  "BC7_UNORM",
+	70: "BC1_UNORM", // BC1_TYPELESS
+	71: "BC1_UNORM",
+	72: "BC1_UNORM_SRGB",
+	73: "BC2_UNORM", // BC2_TYPELESS
+	74: "BC2_UNORM",
+	75: "BC2_UNORM_SRGB",
+	76: "BC3_UNORM", // BC3_TYPELESS
+	77: "BC3_UNORM",
+	78: "BC3_UNORM_SRGB",
+	79: "BC4_UNORM", // BC4_TYPELESS
+	80: "BC4_UNORM",
+	81: "BC4_SNORM",
+	82: "BC5_UNORM", // BC5_TYPELESS
+	83: "BC5_UNORM",
+	84: "BC5_SNORM",
+	94: "BC6H_UF16", // BC6H_TYPELESS
+	95: "BC6H_UF16",
+	96: "BC6H_SF16",
+	97: "BC7_UNORM", // BC7_TYPELESS
+	98: "BC7_UNORM",
+	99: "BC7_UNORM_SRGB",
 }
 
-// bytesPerTexel returns the effective bytes-per-texel for VRAM estimation.
-// BCn formats are block-compressed so we store the fractional value × 100 to avoid floats.
-// Actually let's just use float64 directly for clarity.
+// bytesPerTexelFloat returns the effective bytes per texel for VRAM estimation.
+// BCn formats are block-compressed, so the value is fractional for the 4-bit ones.
+// An _SRGB suffix is dropped first: gamma is a sampling rule, not a size, so the
+// sRGB variant of a format costs exactly what the plain one costs.
 func bytesPerTexelFloat(format string) float64 {
-	switch strings.ToUpper(format) {
+	switch strings.TrimSuffix(strings.ToUpper(format), "_SRGB") {
 	case "BC1_UNORM", "BC4_UNORM", "BC4_SNORM":
 		return 0.5 // 4 bits per pixel
-	case "BC2_UNORM", "BC3_UNORM", "BC5_UNORM", "BC5_SNORM", "BC6H_UF16", "BC6H_SF16", "BC7_UNORM", "BC7_UNORM_SRGB":
+	case "BC2_UNORM", "BC3_UNORM", "BC5_UNORM", "BC5_SNORM", "BC6H_UF16", "BC6H_SF16", "BC7_UNORM":
 		return 1.0 // 8 bits per pixel
-	case "R8G8B8A8_UNORM", "B8G8R8A8_UNORM", "R8G8B8A8_UNORM_SRGB":
+	case "R8G8B8A8_UNORM", "B8G8R8A8_UNORM":
 		return 4.0
 	case "R8G8B8_UNORM", "B8G8R8_UNORM":
 		return 3.0
+	case "R5G6B5_UNORM", "B5G6R5_UNORM", "B5G5R5A1_UNORM":
+		return 2.0
 	case "R16G16B16A16_FLOAT":
 		return 8.0
 	case "R32G32B32A32_FLOAT":
