@@ -149,8 +149,14 @@ func (m SettingsModel) Update(msg tea.Msg) (SettingsModel, tea.Cmd) {
 				}
 				return m, nil
 			}
-		case "esc", "q":
+		case "esc":
 			return m, func() tea.Msg { return NavigateMsg{To: NavMenu} }
+		case "q":
+			// A focused text input owns every printable key: "q" is a letter in
+			// a path there, and cancels only from a toggle row.
+			if inputIdx(m.focused) < 0 {
+				return m, func() tea.Msg { return NavigateMsg{To: NavMenu} }
+			}
 		}
 	}
 
@@ -216,13 +222,13 @@ func (m SettingsModel) save() (SettingsModel, tea.Cmd) {
 		modOutputName = "ATAK"
 	}
 	updated := *m.cfg
-	updated.ModsDir = strings.TrimSpace(m.inputs[0].Value())
-	updated.BackupDir = strings.TrimSpace(m.inputs[1].Value())
+	updated.ModsDir = config.CleanPath(m.inputs[0].Value())
+	updated.BackupDir = config.CleanPath(m.inputs[1].Value())
 	updated.WorkerCount = workers
 	updated.BackupLevel = backupLevel
 	updated.ModOutputMode = m.modOutputMode
 	updated.ModOutputName = modOutputName
-	updated.ModlistPath = strings.TrimSpace(m.inputs[5].Value())
+	updated.ModlistPath = config.CleanPath(m.inputs[5].Value())
 	updated.StripMipsWhenDisabled = m.stripMips
 	updated.CompressionBackend = m.compressionBackend
 	return m, func() tea.Msg {
@@ -392,7 +398,7 @@ func (m SettingsModel) View() string {
 	footer.WriteString(style.KeyHint("tab", "next") + "  ")
 	footer.WriteString(style.KeyHint("space", "toggle") + "  ")
 	footer.WriteString(style.KeyHint("enter", "save") + "  ")
-	footer.WriteString(style.KeyHint("q", "cancel"))
+	footer.WriteString(style.KeyHint("esc", "cancel"))
 
 	const bodyFooterSeparator = "\n\n"
 	title := style.StyleTitle.Render("Settings") + "\n\n"

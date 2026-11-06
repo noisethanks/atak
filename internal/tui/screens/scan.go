@@ -65,7 +65,7 @@ func (m ScanModel) startScan() tea.Cmd {
 		if !dirExists(cfg.ModsDir) {
 			notice := ""
 			if cfg.ModsDir != "" {
-				notice = "Mods directory not found: " + cfg.ModsDir
+				notice = fmt.Sprintf("Mods directory not found: %q", cfg.ModsDir)
 			}
 			return NavigateMsg{To: NavWelcome, Data: notice}
 		}
@@ -87,7 +87,14 @@ func (m ScanModel) startScan() tea.Cmd {
 			}
 			modList, parseErr := modlist.ParseModList(cfg.ModlistPath)
 			if parseErr != nil || len(modList) == 0 {
-				return NavigateMsg{To: NavResults, Data: ScanResultData{ModlistError: modlistErrBadPath}}
+				// %q makes stray quotes or whitespace in the configured path visible.
+				detail := fmt.Sprintf("\n  Path: %q", cfg.ModlistPath)
+				if parseErr != nil {
+					detail += fmt.Sprintf("\n  Error: %v", parseErr)
+				} else {
+					detail += "\n  No enabled mods (lines starting with +) in the file."
+				}
+				return NavigateMsg{To: NavResults, Data: ScanResultData{ModlistError: modlistErrBadPath + detail}}
 			}
 			// Auto-exclude the output folder so it's never scanned.
 			exclusions := append(cfg.ScanExclusions, cfg.ModOutputName)

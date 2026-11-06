@@ -112,7 +112,9 @@ func (b *CompressonatorBackend) Compress(ctx context.Context, job Job) Compressi
 	if waitErr != nil {
 		// Prepend the exact argv so failure records are self-contained — no need
 		// to re-run atak under a debugger to see what the child received.
-		argvLine := "argv: " + b.Path + " " + strings.Join(args, " ")
+		// tools.CommandLine shows the string the child actually parses on Windows,
+		// so a path with spaces that was split is visible as such.
+		argvLine := "argv: " + tools.CommandLine(b.Path, args)
 		if diag != "" {
 			diag = argvLine + "\n" + diag
 		} else {

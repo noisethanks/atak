@@ -3,6 +3,7 @@ package screens
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -92,7 +93,7 @@ func TestScanNavWelcomeNonexistentModsDir(t *testing.T) {
 		t.Errorf("expected NavWelcome, got %v", nav.To)
 	}
 	notice, _ := nav.Data.(string)
-	if !strings.Contains(notice, dir) {
+	if !strings.Contains(notice, strconv.Quote(dir)) {
 		t.Errorf("notice must name the bad path %q, got %q", dir, notice)
 	}
 	if !strings.Contains(notice, "not found") {
@@ -123,7 +124,7 @@ func TestScanNoticeDistinct(t *testing.T) {
 	if emptyNotice != "" {
 		t.Errorf("empty modsDir notice should be empty string, got %q", emptyNotice)
 	}
-	if !strings.Contains(invalidNotice, dir) {
+	if !strings.Contains(invalidNotice, strconv.Quote(dir)) {
 		t.Errorf("invalid modsDir notice should contain path, got %q", invalidNotice)
 	}
 }
@@ -179,7 +180,7 @@ func TestBackupInitNavWelcomeNonexistentBackupDir(t *testing.T) {
 		t.Errorf("expected NavWelcome, got %v", nav.To)
 	}
 	notice, _ := nav.Data.(string)
-	if !strings.Contains(notice, dir) {
+	if !strings.Contains(notice, strconv.Quote(dir)) {
 		t.Errorf("notice must name the bad path %q, got %q", dir, notice)
 	}
 	if !strings.Contains(notice, "not found") {
@@ -204,7 +205,7 @@ func TestBackupInitNoticeDistinct(t *testing.T) {
 	if emptyNotice != "" {
 		t.Errorf("empty backupDir notice should be empty string, got %q", emptyNotice)
 	}
-	if !strings.Contains(invalidNotice, dir) {
+	if !strings.Contains(invalidNotice, strconv.Quote(dir)) {
 		t.Errorf("invalid backupDir notice should contain path, got %q", invalidNotice)
 	}
 }
@@ -247,7 +248,7 @@ func TestBackupInitNavWelcomeNonexistentModsDir(t *testing.T) {
 		t.Errorf("expected NavWelcome, got %v", nav.To)
 	}
 	notice, _ := nav.Data.(string)
-	if !strings.Contains(notice, modsDir) {
+	if !strings.Contains(notice, strconv.Quote(modsDir)) {
 		t.Errorf("notice must name the bad modsDir %q, got %q", modsDir, notice)
 	}
 	if !strings.Contains(notice, "not found") {
@@ -304,7 +305,7 @@ func TestBackupRestoreAllInvalidModsDirRoutes(t *testing.T) {
 		t.Errorf("expected NavWelcome, got %v", nav.To)
 	}
 	notice, _ := nav.Data.(string)
-	if !strings.Contains(notice, modsDir) {
+	if !strings.Contains(notice, strconv.Quote(modsDir)) {
 		t.Errorf("notice must name the bad modsDir %q, got %q", modsDir, notice)
 	}
 }
@@ -352,7 +353,7 @@ func TestBackupStartBackupNavWelcomeNonexistentModsDir(t *testing.T) {
 		t.Errorf("expected NavWelcome, got %v", nav.To)
 	}
 	notice, _ := nav.Data.(string)
-	if !strings.Contains(notice, modsDir) {
+	if !strings.Contains(notice, strconv.Quote(modsDir)) {
 		t.Errorf("notice must name the bad modsDir %q, got %q", modsDir, notice)
 	}
 }

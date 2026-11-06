@@ -96,14 +96,14 @@ func (m BackupModel) Init() tea.Cmd {
 	if !dirExists(m.cfg.BackupDir) {
 		notice := ""
 		if m.cfg.BackupDir != "" {
-			notice = "Backup directory not found: " + m.cfg.BackupDir
+			notice = fmt.Sprintf("Backup directory not found: %q", m.cfg.BackupDir)
 		}
 		return func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
 	}
 	if !dirExists(m.cfg.ModsDir) {
 		notice := ""
 		if m.cfg.ModsDir != "" {
-			notice = "Mods directory not found: " + m.cfg.ModsDir
+			notice = fmt.Sprintf("Mods directory not found: %q", m.cfg.ModsDir)
 		}
 		return func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
 	}
@@ -310,7 +310,7 @@ func (m BackupModel) selectArchiveOrPick(action backupPendingAction) (BackupMode
 		if !dirExists(m.cfg.ModsDir) {
 			notice := ""
 			if m.cfg.ModsDir != "" {
-				notice = "Mods directory not found: " + m.cfg.ModsDir
+				notice = fmt.Sprintf("Mods directory not found: %q", m.cfg.ModsDir)
 			}
 			return m, func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
 		}
@@ -355,7 +355,7 @@ func (m BackupModel) startBackup() (BackupModel, tea.Cmd) {
 	if !dirExists(m.cfg.ModsDir) {
 		notice := ""
 		if m.cfg.ModsDir != "" {
-			notice = "Mods directory not found: " + m.cfg.ModsDir
+			notice = fmt.Sprintf("Mods directory not found: %q", m.cfg.ModsDir)
 		}
 		return m, func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
 	}
@@ -385,7 +385,7 @@ func (m BackupModel) startRestore() (BackupModel, tea.Cmd) {
 	if !dirExists(m.cfg.ModsDir) {
 		notice := ""
 		if m.cfg.ModsDir != "" {
-			notice = "Mods directory not found: " + m.cfg.ModsDir
+			notice = fmt.Sprintf("Mods directory not found: %q", m.cfg.ModsDir)
 		}
 		return m, func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
 	}
@@ -420,7 +420,7 @@ func (m BackupModel) startRestoreAll() (BackupModel, tea.Cmd) {
 	if !dirExists(m.cfg.ModsDir) {
 		notice := ""
 		if m.cfg.ModsDir != "" {
-			notice = "Mods directory not found: " + m.cfg.ModsDir
+			notice = fmt.Sprintf("Mods directory not found: %q", m.cfg.ModsDir)
 		}
 		return m, func() tea.Msg { return NavigateMsg{To: NavWelcome, Data: notice} }
 	}

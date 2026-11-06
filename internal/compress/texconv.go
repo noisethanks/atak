@@ -247,8 +247,9 @@ func runOnce(ctx context.Context, texconvPath, inputPath, format string, generat
 
 	cmd := exec.Command(texconvPath, args...)
 	tools.SetProcAttr(cmd)
-	var stderrBuf bytes.Buffer
+	var stderrBuf, stdoutBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
+	cmd.Stdout = &stdoutBuf
 
 	job, _ := tools.NewJob()
 	if startErr := cmd.Start(); startErr != nil {
@@ -274,7 +275,17 @@ func runOnce(ctx context.Context, texconvPath, inputPath, format string, generat
 
 	stderrStr := stderrBuf.String()
 	if waitErr != nil {
-		return false, stderrStr, fmt.Errorf("texconv: %w", waitErr), 0
+		// texconv prints its own errors ("FAILED (...)", "Invalid ...") to stdout,
+		// so a failure record without stdout and the exact command line carries no
+		// reason at all. Same shape as compressonator's failure record.
+		diag := "argv: " + tools.CommandLine(texconvPath, args)
+		if s := strings.TrimSpace(stdoutBuf.String()); s != "" {
+			diag += "\n" + s
+		}
+		if s := strings.TrimSpace(stderrStr); s != "" {
+			diag += "\n" + s
+		}
+		return false, diag, fmt.Errorf("texconv: %w", waitErr), 0
 	}
 
 	outPath := filepath.Join(outputDir, filepath.Base(inputPath))

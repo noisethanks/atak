@@ -107,6 +107,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	cfg.CompressionBackend = normalizeBackend(cfg.CompressionBackend)
+	// Configs saved by earlier versions can hold quoted paths; fix them on load.
+	cfg.ModsDir = CleanPath(cfg.ModsDir)
+	cfg.BackupDir = CleanPath(cfg.BackupDir)
+	cfg.ModlistPath = CleanPath(cfg.ModlistPath)
 	return &cfg, nil
 }
 

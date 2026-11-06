@@ -101,8 +101,8 @@ func (m WelcomeModel) Update(msg tea.Msg) (WelcomeModel, tea.Cmd) {
 				return m, nil
 			}
 			// Validate and save.
-			modsDir := strings.TrimSpace(m.modsInput.Value())
-			bkupDir := strings.TrimSpace(m.bkupInput.Value())
+			modsDir := config.CleanPath(m.modsInput.Value())
+			bkupDir := config.CleanPath(m.bkupInput.Value())
 			if modsDir == "" {
 				m.err = "Mods directory is required."
 				return m, nil
@@ -112,7 +112,9 @@ func (m WelcomeModel) Update(msg tea.Msg) (WelcomeModel, tea.Cmd) {
 			return m, func() tea.Msg {
 				return NavigateMsg{To: NavSaveConfig, Data: m.cfg}
 			}
-		case "ctrl+c", "q":
+		// Both fields are text inputs, which own every printable key, so "q"
+		// types a q and only ctrl+c quits.
+		case "ctrl+c":
 			return m, func() tea.Msg { return NavigateMsg{To: NavQuit} }
 		}
 	}
@@ -150,7 +152,7 @@ func (m WelcomeModel) View() string {
 
 	b.WriteString(style.StyleKeyHint.Render("tab") + style.StyleMuted.Render(" next field  ") +
 		style.StyleKeyHint.Render("enter") + style.StyleMuted.Render(" confirm  ") +
-		style.StyleKeyHint.Render("q") + style.StyleMuted.Render(" quit"))
+		style.StyleKeyHint.Render("ctrl+c") + style.StyleMuted.Render(" quit"))
 
 	return b.String()
 }
